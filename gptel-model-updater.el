@@ -4,6 +4,7 @@
 
 ;; Author: pfcdx <github@pfcdx>
 ;; Maintainer: Misaka <chuxubank@qq.com>
+;; Assisted-by: opencode:deepseek-v4-flash-free
 ;; Version: 0.2.0
 ;; Package-Requires: ((emacs "29.1") (gptel "0.8"))
 ;; Keywords: comm, tools, processes
@@ -67,7 +68,7 @@ Each item is (BACKEND-VARIABLE MODEL-VARIABLE DISPLAY-NAME MODEL-LIST).
 MODEL-LIST is optional and overrides `gptel-model-updater-models' for that
 target.  These targets are selected and set when
 `gptel-model-updater-select-backend-models' is called with external
-targets enabled, such as via a C-u prefix interactively."
+targets enabled, such as via a `\\[universal-argument]' prefix interactively."
   :type '(repeat (choice (list symbol symbol string)
                          (list symbol symbol string
                                (repeat (choice symbol string)))))
@@ -224,7 +225,7 @@ Iterates over `gptel-model-updater-backends' and returns their name strings."
         (when-let* ((backend (and (symbolp backend-symbol)
                                   (boundp backend-symbol)
                                   (symbol-value backend-symbol)))
-                  (models (gptel-backend-models backend)))
+                    (models (gptel-backend-models backend)))
           (when (and (or (not backend-name)
                          (string= backend-name (gptel-backend-name backend)))
                      (memq model models))
@@ -315,10 +316,10 @@ otherwise select each target from MODEL-LIST or randomly."
          backend-variable model-variable
          (if interactivep
              (gptel-model-updater--read-backend-model
-               (format "%s " (gptel-model-updater--target-label target)))
-            (gptel-model-updater--pick-backend-model
-             (or (gptel-model-updater--target-models target)
-                 model-list))))))))
+              (format "%s " (gptel-model-updater--target-label target)))
+           (gptel-model-updater--pick-backend-model
+            (or (gptel-model-updater--target-models target)
+                model-list))))))))
 
 ;;;###autoload
 (defun gptel-model-updater-select-backend-models (&optional external quiet choice interactive-external model-list)
@@ -332,13 +333,14 @@ the first backend with models is selected, and one model is chosen randomly.
 When EXTERNAL is non-nil, set variable pairs from
 `gptel-model-updater-external-targets' instead of the global
 gptel-backend/model.  When QUIET is non-nil, do not print the final
-selection.  CHOICE is a cons of BACKEND and MODEL."
+selection.  CHOICE is a cons of BACKEND and MODEL.
+INTERACTIVE-EXTERNAL non-nil means read each target interactively."
   (interactive
    (if current-prefix-arg
        (list t nil nil t)
-      (list nil
-            nil
-            (gptel-model-updater--read-backend-model "GPTel "))))
+     (list nil
+           nil
+           (gptel-model-updater--read-backend-model "GPTel "))))
   (when (gptel-model-updater--hook-args-p external choice)
     (setq external nil
           quiet t
@@ -360,8 +362,8 @@ selection.  CHOICE is a cons of BACKEND and MODEL."
                                      (gptel-backend-name (symbol-value backend-variable)))
                                 (and (boundp model-variable)
                                      (symbol-value model-variable)))))
-                     gptel-model-updater-external-targets
-                     ""))))
+                    gptel-model-updater-external-targets
+                    ""))))
     (setq choice (or choice (gptel-model-updater--pick-backend-model model-list)))
     (gptel-model-updater--set-choice 'gptel-backend 'gptel-model choice)
     (unless quiet
@@ -392,12 +394,12 @@ URL overrides the default endpoint.  MODEL-LIST orders available models."
          (lambda (success raw-data error-msg)
            (if (not success)
                (message "GPTel-Model-Updater Error: %s (%s)" backend-name error-msg)
-              (let ((new-models (gptel-model-updater--order-models
-                                 (gptel-model-updater--parse-models raw-data provider)
-                                 (gptel-model-updater--effective-model-list model-list)
-                                 backend-name)))
-                (if (not new-models)
-                    (message "GPTel-Model-Updater: No models found for %s" backend-name)
+             (let ((new-models (gptel-model-updater--order-models
+                                (gptel-model-updater--parse-models raw-data provider)
+                                (gptel-model-updater--effective-model-list model-list)
+                                backend-name)))
+               (if (not new-models)
+                   (message "GPTel-Model-Updater: No models found for %s" backend-name)
                  (setf (gptel-backend-models backend) new-models)
                  (message "GPTel-Model-Updater: Updated %s with %d models"
                           backend-name (length new-models))
