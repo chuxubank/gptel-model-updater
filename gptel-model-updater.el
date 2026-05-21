@@ -5,8 +5,8 @@
 ;; Author: pfcdx <github@pfcdx>
 ;; Maintainer: Misaka <chuxubank@qq.com>
 ;; Version: 0.2.0
-;; Package-Requires: ((gptel))
-;; Keywords: gptel, ai, llm
+;; Package-Requires: ((emacs "29.1") (gptel))
+;; Keywords: comm, tools, processes
 ;; URL: https://github.com/chuxubank/gptel-model-updater
 
 ;; This program is free software; you can redistribute it and/or modify
