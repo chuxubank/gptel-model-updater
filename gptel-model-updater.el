@@ -5,7 +5,7 @@
 ;; Author: pfcdx <github@pfcdx>
 ;; Maintainer: Misaka <chuxubank@qq.com>
 ;; Version: 0.2.0
-;; Package-Requires: ((emacs "29.1") (gptel))
+;; Package-Requires: ((emacs "29.1") (gptel "0.8"))
 ;; Keywords: comm, tools, processes
 ;; URL: https://github.com/chuxubank/gptel-model-updater
 
