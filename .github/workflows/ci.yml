@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        emacs-version: [29, 30]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: purcell/setup-emacs@master
+        with:
+          version: ${{ matrix.emacs-version }}
+      - name: Install package-lint
+        run: |
+          emacs --batch --eval "(package-initialize)" \
+                --eval "(package-refresh-contents)" \
+                --eval "(package-install (quote (package-lint)))"
+      - name: Run package-lint
+        run: |
+          emacs --batch --eval "(package-initialize)" \
+                -L . \
+                --eval "(require 'package-lint)" \
+                --eval "(package-lint-batch-and-exit)" \
+                gptel-model-updater.el
+      - name: Run checkdoc
+        run: |
+          emacs --batch -L . \
+                --eval "(checkdoc-file \"gptel-model-updater.el\")"
+
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        emacs-version: [29, 30]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: purcell/setup-emacs@master
+        with:
+          version: ${{ matrix.emacs-version }}
+      - name: Install dependencies
+        run: |
+          emacs --batch --eval "(package-initialize)" \
+                --eval "(package-refresh-contents)" \
+                --eval "(package-install (quote (gptel)))"
+      - name: Byte compile
+        run: |
+          emacs --batch --eval "(setq byte-compile-error-on-warn t)" \
+                --eval "(package-initialize)" \
+                -L . \
+                --eval "(byte-compile-file \"gptel-model-updater.el\")"
