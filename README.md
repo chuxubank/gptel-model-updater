@@ -1,5 +1,8 @@
 # gptel-model-updater
 
+[![MELPA](https://melpa.org/packages/gptel-model-updater-badge.svg)](https://melpa.org/#/gptel-model-updater)
+[![CI](https://github.com/chuxubank/gptel-model-updater/actions/workflows/ci.yml/badge.svg)](https://github.com/chuxubank/gptel-model-updater/actions/workflows/ci.yml)
+
 Fetch and update model lists for [GPTel](https://github.com/karthink/gptel) backends from various LLM providers. Models are discovered at runtime via async `curl` requests, so you never need to hardcode model lists.
 
 ## Features
