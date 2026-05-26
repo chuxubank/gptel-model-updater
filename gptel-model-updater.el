@@ -89,7 +89,7 @@ Omitted keys fall back to the corresponding global settings:
   :type '(repeat sexp)
   :group 'gptel-model-updater)
 
-(defcustom gptel-model-updater-after-update-hook #'gptel-model-updater-select-all-backend-models-after-update
+(defcustom gptel-model-updater-after-update-hook #'gptel-model-updater-select-all-targets-after-update
   "Hook run after a backend's models are updated successfully.
 Each function is called with BACKEND-NAME, BACKEND, and MODELS."
   :type 'hook
@@ -114,7 +114,7 @@ Each item is (BACKEND-VARIABLE MODEL-VARIABLE DISPLAY-NAME MODEL-LIST).
 MODEL-LIST is optional and overrides `gptel-model-updater-models' for that
 target.  These targets are selected and set when
 `gptel-model-updater-select-external-targets' is called, or via
-`gptel-model-updater-select-all-backend-models'."
+`gptel-model-updater-select-all-targets'."
   :type '(repeat (choice (list symbol symbol string)
                          (list symbol symbol string
                                (repeat (choice symbol string)))))
@@ -568,8 +568,8 @@ When QUIET is non-nil, do not print the final selections."
               ""))))
 
 ;;;###autoload
-(defun gptel-model-updater-select-all-backend-models (&optional quiet model-list)
-  "Select global and external backend/model variables.
+(defun gptel-model-updater-select-all-targets (&optional quiet model-list)
+  "Select all configured backend/model targets.
 The global `gptel-backend' and `gptel-model' variables are selected first.
 Then `gptel-model-updater-external-targets' are selected.  MODEL-LIST
 overrides `gptel-model-updater-models'.  When QUIET is non-nil, do not print
@@ -579,21 +579,10 @@ selection messages."
   (gptel-model-updater-select-backend-model quiet nil model-list)
   (gptel-model-updater-select-external-targets quiet nil model-list))
 
-(defun gptel-model-updater-select-all-backend-models-after-update
+(defun gptel-model-updater-select-all-targets-after-update
     (_backend-name _backend _models)
-  "Select all configured backend/model targets after a backend update."
-  (gptel-model-updater-select-all-backend-models t))
-
-;;;###autoload
-(defun gptel-model-updater-select-backend-models (&optional quiet model-list)
-  "Compatibility alias for `gptel-model-updater-select-all-backend-models'.
-QUIET and MODEL-LIST are passed through."
-  (interactive)
-  (gptel-model-updater-select-all-backend-models quiet model-list))
-
-(make-obsolete 'gptel-model-updater-select-backend-models
-               'gptel-model-updater-select-all-backend-models
-               "0.3.0")
+  "Select all configured targets after a backend update."
+  (gptel-model-updater-select-all-targets t))
 
 ;;;###autoload
 (defun gptel-model-updater-update-backend (backend-name &optional provider-type url model-list)
