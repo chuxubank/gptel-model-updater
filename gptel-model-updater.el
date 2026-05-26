@@ -590,14 +590,20 @@ When QUIET is non-nil, do not print the final selections."
 The global `gptel-backend' and `gptel-model' variables are selected first.
 Then `gptel-model-updater-external-targets' are selected.  MODEL-LIST
 overrides `gptel-model-updater-models'.  When QUIET is non-nil, do not print
-selection messages."
+selection messages.
+
+With \\[universal-argument], interactively select each target."
   (interactive)
   (setq model-list (gptel-model-updater--effective-model-list model-list))
-  (gptel-model-updater-select-default-target t nil model-list)
-  (gptel-model-updater-select-external-targets t nil model-list)
-  (unless quiet
-    (message "GPTel targets set\n%s"
-             (gptel-model-updater--format-all-targets))))
+  (if (and current-prefix-arg (not quiet))
+      (progn
+        (call-interactively #'gptel-model-updater-select-default-target)
+        (call-interactively #'gptel-model-updater-select-external-targets))
+    (gptel-model-updater-select-default-target t nil model-list)
+    (gptel-model-updater-select-external-targets t nil model-list)
+    (unless quiet
+      (message "GPTel targets set\n%s"
+               (gptel-model-updater--format-all-targets)))))
 
 (defun gptel-model-updater-select-all-targets-after-update
     (_backend-name _backend _models)
