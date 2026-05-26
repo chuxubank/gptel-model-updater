@@ -38,8 +38,9 @@ build:
 
 test:
 	$(BATCH) $(ARCHIVES) $(LOAD_PATH) \
-	  --eval "(ert-run-tests-batch-and-exit)" \
-	  -l gptel-model-updater.el
+	  -l gptel-model-updater.el \
+	  -l gptel-model-updater-tests.el \
+	  --eval "(ert-run-tests-batch-and-exit)"
 
 clean:
 	rm -f *.elc
