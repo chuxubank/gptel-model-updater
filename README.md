@@ -3,15 +3,19 @@
 [![MELPA](https://melpa.org/packages/gptel-model-updater-badge.svg)](https://melpa.org/#/gptel-model-updater)
 [![CI](https://github.com/chuxubank/gptel-model-updater/actions/workflows/ci.yml/badge.svg)](https://github.com/chuxubank/gptel-model-updater/actions/workflows/ci.yml)
 
-Fetch and update model lists for [GPTel](https://github.com/karthink/gptel) backends from various LLM providers. Models are discovered at runtime via async `curl` requests, so you never need to hardcode model lists.
+Fetch and update model IDs for [GPTel](https://github.com/karthink/gptel) backends from various LLM providers. Models are discovered at runtime, so you never need to hardcode model lists.
+
+This package is intentionally a basic convenience layer. It blindly imports model IDs exposed by provider endpoints and does not verify model cost, tool support, context length, release date, deprecation state, safety policy, or other provider-specific properties. Users are responsible for checking those details before selecting a model.
 
 ## Features
 
 - Fetches available models from OpenAI-compatible APIs, Ollama, and Gemini
 - Updates `gptel-backend-models` on each backend struct automatically
+- Limits model ingress with include/exclude regexps and a maximum model count
+- Respects `gptel-use-curl`: uses async curl when enabled, otherwise Emacs `url-retrieve`
+- Keeps the provider's model order by default, with optional alphabetical sorting
 - Auto-selects a preferred (backend . model) pair after update
 - Supports multiple **external targets** — set separate backend/model pairs for different consumers (e.g., `gptel-magit` gets a cheap model, chat gets the flagship model)
-- Async curl — no blocking, no Emacs URL library dependency
 
 ## Installation
 
@@ -60,7 +64,7 @@ Emacs 30+ has `vc-use-package` built-in; on earlier versions install it from [Gi
 ### 3. Update models and select a backend/model pair
 
 ```elisp
-;; Update all backends (async curl)
+;; Update all backends asynchronously
 (gptel-model-updater-update-all)
 
 ;; Select a model interactively
@@ -73,6 +77,20 @@ Emacs 30+ has `vc-use-package` built-in; on earlier versions install it from [Gi
 (gptel-model-updater-update-all)
 ;; After each backend finishes, the hook auto-selects a model
 ```
+
+### 5. Limit large provider model lists
+
+Some providers may expose a very large number of models from the same endpoint. Configure ingress controls to keep completion lists and backend state small:
+
+```elisp
+(setq gptel-model-updater-include-model-regexp
+      "\\`\\(openai/\\|anthropic/\\|google/\\)")
+(setq gptel-model-updater-exclude-model-regexp
+      "\\(preview\\|beta\\|free\\)")
+(setq gptel-model-updater-max-models 80)
+```
+
+Set `gptel-model-updater-max-models` to nil if you explicitly want to keep every fetched model that passes the regexp filters.
 
 ## Customization
 
@@ -88,6 +106,20 @@ Preferred models in `BACKEND:MODEL` format, tried in order at selection time. Th
 (setq gptel-model-updater-models
       '("OpenAI:gpt-4o" "Gemini:gemini-2.5-pro"))
 ```
+
+Preferred models still need to pass the ingress filters below. After filtering, preferred models are moved to the front before `gptel-model-updater-max-models` is applied.
+
+### `gptel-model-updater-include-model-regexp`
+
+Only keep fetched model names matching this regexp. The default is nil, which allows all fetched models before other filters are applied.
+
+### `gptel-model-updater-exclude-model-regexp`
+
+Drop fetched model names matching this regexp. The default is nil, which excludes nothing.
+
+### `gptel-model-updater-max-models`
+
+Maximum number of models written to each refreshed backend after regexp filtering and preferred-model ordering. The default is 200. Set it to nil to disable the limit.
 
 ### `gptel-model-updater-external-targets`
 
@@ -113,7 +145,17 @@ Hook run after each successful model fetch. Functions receive `(backend-name bac
 
 ### `gptel-model-updater-timeout`
 
-Curl timeout in seconds (default: 30).
+Request timeout in seconds for curl requests (default: 30).
+
+### `gptel-model-updater-sort-models`
+
+When non-nil, sort fetched models alphabetically. The default is nil, which preserves the provider's response order. Preferred entries from `gptel-model-updater-models` are still moved to the front when present.
+
+## Scope and limitations
+
+Automatic model updating is blind. The package only imports model IDs from provider endpoints and writes them into `gptel-backend-models`. It does not fetch or interpret model metadata, and it cannot tell whether a model is appropriate for chat, tool use, image input, long context, price-sensitive use, or production workflows.
+
+Provider endpoints may also include deprecated, preview, restricted, expensive, or otherwise unsuitable models. Use the ingress controls above, and verify provider documentation before relying on a model.
 
 ## Commands
 

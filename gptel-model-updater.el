@@ -32,6 +32,10 @@
 
 (require 'json)
 (require 'cl-lib)
+(require 'seq)
+(require 'subr-x)
+(require 'url)
+(require 'url-http)
 (require 'gptel)
 
 (defgroup gptel-model-updater nil
@@ -41,6 +45,34 @@
 (defcustom gptel-model-updater-timeout 30
   "Timeout for API requests in seconds."
   :type 'number
+  :group 'gptel-model-updater)
+
+(defcustom gptel-model-updater-sort-models nil
+  "Whether to sort fetched model lists alphabetically.
+When nil, keep the provider's response order, with
+`gptel-model-updater-models' entries moved to the front when configured."
+  :type 'boolean
+  :group 'gptel-model-updater)
+
+(defcustom gptel-model-updater-include-model-regexp nil
+  "Regexp matching model names allowed into refreshed backend model lists.
+When nil, do not filter models by inclusion regexp."
+  :type '(choice (const :tag "Allow all" nil)
+                 regexp)
+  :group 'gptel-model-updater)
+
+(defcustom gptel-model-updater-exclude-model-regexp nil
+  "Regexp matching model names excluded from refreshed backend model lists.
+When nil, do not filter models by exclusion regexp."
+  :type '(choice (const :tag "Exclude none" nil)
+                 regexp)
+  :group 'gptel-model-updater)
+
+(defcustom gptel-model-updater-max-models 200
+  "Maximum number of models to write to a refreshed backend.
+When nil, keep every model that passes the regexp filters."
+  :type '(choice (const :tag "No limit" nil)
+                 (integer :tag "Maximum models"))
   :group 'gptel-model-updater)
 
 (defcustom gptel-model-updater-after-update-hook #'gptel-model-updater-select-backend-models
@@ -113,6 +145,10 @@ API-KEY is used for providers that require it in the query string."
             ;; Gemini uses query param for key, no auth header needed
             (_ nil))))
 
+(defun gptel-model-updater--curl-program ()
+  "Return the curl executable configured by `gptel-use-curl'."
+  (if (stringp gptel-use-curl) gptel-use-curl "curl"))
+
 (defun gptel-model-updater--get-api-key (backend key-source)
   "Get API key for BACKEND from KEY-SOURCE.
 Bind `gptel-backend' while resolving KEY-SOURCE so auth-source
@@ -120,6 +156,112 @@ lookups use BACKEND's host instead of the current chat backend."
   (when key-source
     (let ((gptel-backend backend))
       (ignore-errors (gptel--get-api-key key-source)))))
+
+(defun gptel-model-updater--parse-response (provider-type body)
+  "Parse BODY for PROVIDER-TYPE and return (t . RAW-DATA).
+Return nil when BODY is not valid JSON."
+  (let* ((json-object-type 'alist)
+         (json-key-type 'symbol)
+         (response (condition-case nil
+                       (json-read-from-string body)
+                     (error nil))))
+    (when response
+      (let ((raw-data (pcase provider-type
+                        ('gemini (alist-get 'models response))
+                        ('ollama (alist-get 'models response))
+                        (_ (alist-get 'data response)))))
+        (cons t (if (vectorp raw-data) (append raw-data nil) raw-data))))))
+
+(defun gptel-model-updater--http-success-p (code)
+  "Return non-nil when HTTP CODE is a 2xx status."
+  (and (integerp code) (<= 200 code) (< code 300)))
+
+(defun gptel-model-updater--fetch-models-with-curl (backend-name provider-type url headers callback)
+  "Fetch models using curl and call CALLBACK with the result.
+BACKEND-NAME is used for messages.
+PROVIDER-TYPE is `openai', `ollama', or `gemini'.
+URL is the endpoint to fetch from.
+HEADERS is the request headers alist.
+CALLBACK is called with (success raw-data error-message)."
+  (let* ((status-marker "\n__GPTEL_MODEL_UPDATER_HTTP_STATUS__:")
+         (args (list "--silent" "--show-error"
+                     "--max-time" (number-to-string gptel-model-updater-timeout)
+                     "--write-out" (concat status-marker "%{http_code}")))
+         (output-buf (generate-new-buffer " *gptel-model-updater-curl*")))
+    (dolist (h headers)
+      (setq args (append args (list "-H" (format "%s: %s" (car h) (cdr h))))))
+    (setq args (append args (list url)))
+    (make-process
+     :name (format "gptel-model-updater-%s" backend-name)
+     :buffer output-buf
+     :command (cons (gptel-model-updater--curl-program) args)
+     :noquery t
+     :sentinel
+     (lambda (proc event)
+       (when (memq (process-status proc) '(exit signal))
+         (let ((buffer (process-buffer proc))
+               (exit-status (process-exit-status proc)))
+           (unwind-protect
+               (if (not (zerop exit-status))
+                   (funcall callback nil nil
+                            (format "curl process %s" (string-trim event)))
+                 (with-current-buffer buffer
+                   (let* ((output (buffer-string))
+                          (status-pos (string-match (regexp-quote status-marker) output))
+                          (body (if status-pos (substring output 0 status-pos) output))
+                          (http-code (and status-pos
+                                          (string-to-number
+                                           (substring output
+                                                      (+ status-pos (length status-marker))))))
+                          (parsed (and (gptel-model-updater--http-success-p http-code)
+                                       (gptel-model-updater--parse-response
+                                        provider-type body))))
+                     (cond
+                      ((not (gptel-model-updater--http-success-p http-code))
+                       (funcall callback nil nil
+                                (format "HTTP %s" (or http-code "unknown"))))
+                      ((not parsed)
+                       (funcall callback nil nil "Failed to parse JSON"))
+                      (t
+                       (funcall callback t (cdr parsed) nil))))))
+             (when (buffer-live-p buffer)
+               (kill-buffer buffer)))))))))
+
+(defun gptel-model-updater--fetch-models-with-url (_backend-name provider-type url headers callback)
+  "Fetch models using `url-retrieve' and call CALLBACK with the result.
+PROVIDER-TYPE is `openai', `ollama', or `gemini'.
+URL is the endpoint to fetch from.
+HEADERS is the request headers alist.
+CALLBACK is called with (success raw-data error-message)."
+  (let ((url-request-method "GET")
+        (url-request-extra-headers headers))
+    (url-retrieve
+     url
+     (lambda (status)
+       (unwind-protect
+           (let ((error-info (plist-get status :error)))
+             (if error-info
+                 (funcall callback nil nil (format "%s" error-info))
+               (let ((http-code (url-http-parse-response)))
+                 (cond
+                  ((not (gptel-model-updater--http-success-p http-code))
+                   (funcall callback nil nil
+                            (format "HTTP %s" (or http-code "unknown"))))
+                  (t
+                   (goto-char (point-min))
+                   (if (not (re-search-forward "\r?\n\r?\n" nil t))
+                       (funcall callback nil nil "Malformed HTTP response")
+                     (let ((parsed (gptel-model-updater--parse-response
+                                    provider-type
+                                    (buffer-substring-no-properties
+                                     (point) (point-max)))))
+                       (if parsed
+                           (funcall callback t (cdr parsed) nil)
+                         (funcall callback nil nil
+                                  "Failed to parse JSON")))))))))
+         (when (buffer-live-p (current-buffer))
+           (kill-buffer (current-buffer)))))
+     nil t t)))
 
 (defun gptel-model-updater--fetch-models (backend-name provider-type url headers callback)
   "Fetch models from URL and call CALLBACK with the result.
@@ -129,42 +271,11 @@ URL is the endpoint to fetch from.
 HEADERS is the request headers alist.
 CALLBACK is called with (success raw-data error-message)."
   (message "GPTel-Model-Updater: Contacting %s..." backend-name)
-  (let* ((args (list "--silent" "--max-time" (number-to-string gptel-model-updater-timeout)))
-         (output-buf (generate-new-buffer " *gptel-model-updater-curl*")))
-    (dolist (h headers)
-      (setq args (append args (list "-H" (format "%s: %s" (car h) (cdr h))))))
-    (setq args (append args (list url)))
-    (make-process
-     :name (format "gptel-model-updater-%s" backend-name)
-     :buffer output-buf
-     :command (cons "curl" args)
-     :noquery t
-     :sentinel
-     (lambda (proc event)
-       (when (string-match-p "finished" event)
-         (with-current-buffer (process-buffer proc)
-           (let* ((body (buffer-string))
-                  (json-object-type 'alist)
-                  (json-key-type 'symbol)
-                  (response (condition-case nil
-                                (json-read-from-string body)
-                              (error nil))))
-             (kill-buffer (process-buffer proc))
-             (if (not response)
-                 (funcall callback nil nil "Failed to parse JSON")
-               (let ((raw-data (pcase provider-type
-                                 ('gemini (alist-get 'models response))
-                                 ('ollama (alist-get 'models response))
-                                 (_ (alist-get 'data response)))))
-                 (when (vectorp raw-data)
-                   (setq raw-data (append raw-data nil)))
-                 (funcall callback t raw-data nil)))))
-         (when (buffer-live-p (process-buffer proc))
-           (kill-buffer (process-buffer proc))))
-       (when (string-match-p "\\(exited\\|failed\\)" event)
-         (when (buffer-live-p (process-buffer proc))
-           (kill-buffer (process-buffer proc)))
-         (funcall callback nil nil (format "curl process %s" (string-trim event))))))))
+  (if gptel-use-curl
+      (gptel-model-updater--fetch-models-with-curl
+       backend-name provider-type url headers callback)
+    (gptel-model-updater--fetch-models-with-url
+     backend-name provider-type url headers callback)))
 
 (defun gptel-model-updater--parse-models (raw-data provider-type)
   "Parse RAW-DATA from PROVIDER-TYPE into a list of model symbols."
@@ -182,10 +293,11 @@ CALLBACK is called with (success raw-data error-message)."
                        (alist-get 'name m))))))
         (when (and id (not (string-empty-p id)))
           (push (intern id) models))))
-    (when models
-      (setq models
-            (sort (delete-dups models)
-                  (lambda (a b) (string< (symbol-name a) (symbol-name b))))))
+    (setq models (delete-dups (nreverse models)))
+    (when (and models gptel-model-updater-sort-models)
+      (setq models (sort models
+                         (lambda (a b)
+                           (string< (symbol-name a) (symbol-name b))))))
     models))
 
 (defun gptel-model-updater--get-backends ()
@@ -242,6 +354,35 @@ Iterates over `gptel-model-updater-backends' and returns their name strings."
                  (not (memq model selected)))
         (setq selected (append selected (list model)))))
     (append selected (cl-remove-if (lambda (model) (memq model selected)) models))))
+
+(defun gptel-model-updater--model-allowed-p (model)
+  "Return non-nil when MODEL passes configured ingress filters."
+  (let ((model-name (symbol-name model)))
+    (and (or (not gptel-model-updater-include-model-regexp)
+             (string-match-p gptel-model-updater-include-model-regexp model-name))
+         (or (not gptel-model-updater-exclude-model-regexp)
+             (not (string-match-p gptel-model-updater-exclude-model-regexp model-name))))))
+
+(defun gptel-model-updater--filter-models (models)
+  "Return MODELS that pass configured ingress filters."
+  (cl-remove-if-not #'gptel-model-updater--model-allowed-p models))
+
+(defun gptel-model-updater--limit-models (models)
+  "Return MODELS limited by `gptel-model-updater-max-models'."
+  (if (and (integerp gptel-model-updater-max-models)
+           (natnump gptel-model-updater-max-models))
+      (seq-take models gptel-model-updater-max-models)
+    models))
+
+(defun gptel-model-updater--prepare-models (models &optional model-list backend-name)
+  "Filter, order, and limit MODELS for BACKEND-NAME.
+MODEL-LIST contains preferred model entries moved to the front before the
+maximum model count is applied."
+  (gptel-model-updater--limit-models
+   (gptel-model-updater--order-models
+    (gptel-model-updater--filter-models models)
+    model-list
+    backend-name)))
 
 (defun gptel-model-updater--pick-backend-model (&optional model-list)
   "Pick an available backend/model.
@@ -394,15 +535,20 @@ URL overrides the default endpoint.  MODEL-LIST orders available models."
          (lambda (success raw-data error-msg)
            (if (not success)
                (message "GPTel-Model-Updater Error: %s (%s)" backend-name error-msg)
-             (let ((new-models (gptel-model-updater--order-models
-                                (gptel-model-updater--parse-models raw-data provider)
-                                (gptel-model-updater--effective-model-list model-list)
-                                backend-name)))
+             (let* ((parsed-models (gptel-model-updater--parse-models raw-data provider))
+                    (new-models (gptel-model-updater--prepare-models
+                                 parsed-models
+                                 (gptel-model-updater--effective-model-list model-list)
+                                 backend-name)))
                (if (not new-models)
                    (message "GPTel-Model-Updater: No models found for %s" backend-name)
                  (setf (gptel-backend-models backend) new-models)
-                 (message "GPTel-Model-Updater: Updated %s with %d models"
-                          backend-name (length new-models))
+                 (message "GPTel-Model-Updater: Updated %s with %d models%s"
+                          backend-name
+                          (length new-models)
+                          (if (= (length new-models) (length parsed-models))
+                              ""
+                            (format " from %d fetched models" (length parsed-models))))
                  (run-hook-with-args 'gptel-model-updater-after-update-hook
                                      backend-name backend new-models))))))))))
 
