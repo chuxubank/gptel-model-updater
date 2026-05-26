@@ -503,6 +503,32 @@ PROMPT-PREFIX is prepended to completion prompts."
   "Return display label for external TARGET."
   (or (nth 2 target) (symbol-name (car target))))
 
+(defun gptel-model-updater--format-default-target ()
+  "Return a display string for the default GPTel target."
+  (format "Default: backend=%s model=%s"
+          (and (boundp 'gptel-backend) gptel-backend
+               (gptel-backend-name gptel-backend))
+          (and (boundp 'gptel-model) gptel-model)))
+
+(defun gptel-model-updater--format-external-target (target)
+  "Return a display string for external TARGET."
+  (pcase-let ((`(,backend-variable ,model-variable . ,_) target))
+    (format "%s: backend=%s model=%s"
+            (gptel-model-updater--target-label target)
+            (and (boundp backend-variable)
+                 (symbol-value backend-variable)
+                 (gptel-backend-name (symbol-value backend-variable)))
+            (and (boundp model-variable)
+                 (symbol-value model-variable)))))
+
+(defun gptel-model-updater--format-all-targets ()
+  "Return a display string for all configured targets."
+  (string-join
+   (cons (gptel-model-updater--format-default-target)
+         (mapcar #'gptel-model-updater--format-external-target
+                 gptel-model-updater-external-targets))
+   "\n"))
+
 (defun gptel-model-updater--select-external-targets (interactivep &optional model-list)
   "Set configured external targets.
 When INTERACTIVEP is non-nil, read each target with completion;
@@ -520,8 +546,8 @@ otherwise select each target from MODEL-LIST or randomly."
                 model-list))))))))
 
 ;;;###autoload
-(defun gptel-model-updater-select-backend-model (&optional quiet choice model-list)
-  "Select the global GPTel backend/model from refreshed model lists.
+(defun gptel-model-updater-select-default-target (&optional quiet choice model-list)
+  "Select the default GPTel backend/model target from refreshed model lists.
 Interactively, read backend and model with completion.  Otherwise, entries
 in MODEL-LIST are tried in order.  Each entry may be BACKEND:MODEL, or just
 MODEL to search across `gptel-model-updater-backends'.  If MODEL-LIST is
@@ -537,10 +563,8 @@ of BACKEND and MODEL."
   (setq choice (or choice (gptel-model-updater--pick-backend-model model-list)))
   (gptel-model-updater--set-choice 'gptel-backend 'gptel-model choice)
   (unless quiet
-    (message "GPTel: backend=%s model=%s"
-             (and (boundp 'gptel-backend) gptel-backend
-                  (gptel-backend-name gptel-backend))
-             (and (boundp 'gptel-model) gptel-model))))
+    (message "GPTel target set\n%s"
+             (gptel-model-updater--format-default-target))))
 
 ;;;###autoload
 (defun gptel-model-updater-select-external-targets (&optional quiet interactivep model-list)
@@ -556,14 +580,7 @@ When QUIET is non-nil, do not print the final selections."
     (message "GPTel external targets set%s"
              (mapconcat
               (lambda (target)
-                (pcase-let ((`(,backend-variable ,model-variable . ,_) target))
-                  (format "\n%s: backend=%s model=%s"
-                          (gptel-model-updater--target-label target)
-                          (and (boundp backend-variable)
-                               (symbol-value backend-variable)
-                               (gptel-backend-name (symbol-value backend-variable)))
-                          (and (boundp model-variable)
-                               (symbol-value model-variable)))))
+                (concat "\n" (gptel-model-updater--format-external-target target)))
               gptel-model-updater-external-targets
               ""))))
 
@@ -576,8 +593,11 @@ overrides `gptel-model-updater-models'.  When QUIET is non-nil, do not print
 selection messages."
   (interactive)
   (setq model-list (gptel-model-updater--effective-model-list model-list))
-  (gptel-model-updater-select-backend-model quiet nil model-list)
-  (gptel-model-updater-select-external-targets quiet nil model-list))
+  (gptel-model-updater-select-default-target t nil model-list)
+  (gptel-model-updater-select-external-targets t nil model-list)
+  (unless quiet
+    (message "GPTel targets set\n%s"
+             (gptel-model-updater--format-all-targets))))
 
 (defun gptel-model-updater-select-all-targets-after-update
     (_backend-name _backend _models)
