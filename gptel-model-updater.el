@@ -5,7 +5,7 @@
 ;; Author: pfcdx <github@pfcdx>
 ;; Maintainer: Misaka <chuxubank@qq.com>
 ;; Assisted-by: opencode:deepseek-v4-flash-free
-;; Version: 0.2.0
+;; Version: 0.3.0
 ;; Package-Requires: ((emacs "29.1") (gptel "0.8"))
 ;; Keywords: comm, tools, processes
 ;; URL: https://github.com/chuxubank/gptel-model-updater
@@ -68,7 +68,7 @@ When nil, do not filter models by exclusion regexp."
                  regexp)
   :group 'gptel-model-updater)
 
-(defcustom gptel-model-updater-max-models 200
+(defcustom gptel-model-updater-max-models nil
   "Maximum number of models to write to a refreshed backend.
 When nil, keep every model that passes the regexp filters."
   :type '(choice (const :tag "No limit" nil)
@@ -89,7 +89,7 @@ Omitted keys fall back to the corresponding global settings:
   :type '(repeat sexp)
   :group 'gptel-model-updater)
 
-(defcustom gptel-model-updater-after-update-hook #'gptel-model-updater-select-backend-models
+(defcustom gptel-model-updater-after-update-hook #'gptel-model-updater-select-all-backend-models-after-update
   "Hook run after a backend's models are updated successfully.
 Each function is called with BACKEND-NAME, BACKEND, and MODELS."
   :type 'hook
@@ -113,8 +113,8 @@ or strings."
 Each item is (BACKEND-VARIABLE MODEL-VARIABLE DISPLAY-NAME MODEL-LIST).
 MODEL-LIST is optional and overrides `gptel-model-updater-models' for that
 target.  These targets are selected and set when
-`gptel-model-updater-select-backend-models' is called with external
-targets enabled, such as via a `\\[universal-argument]' prefix interactively."
+`gptel-model-updater-select-external-targets' is called, or via
+`gptel-model-updater-select-all-backend-models'."
   :type '(repeat (choice (list symbol symbol string)
                          (list symbol symbol string
                                (repeat (choice symbol string)))))
@@ -463,10 +463,6 @@ the first available managed backend and a random model."
   "Return preferred model list configured on external TARGET."
   (nth 3 target))
 
-(defun gptel-model-updater--hook-args-p (external choice)
-  "Return non-nil when EXTERNAL and CHOICE look like after-update hook args."
-  (and (stringp external) (listp choice)))
-
 (defun gptel-model-updater--effective-model-list (&optional model-list)
   "Return MODEL-LIST or `gptel-model-updater-models'."
   (or model-list gptel-model-updater-models))
@@ -524,55 +520,80 @@ otherwise select each target from MODEL-LIST or randomly."
                 model-list))))))))
 
 ;;;###autoload
-(defun gptel-model-updater-select-backend-models (&optional external quiet choice interactive-external model-list)
-  "Select GPTel backend/model from refreshed model lists.
+(defun gptel-model-updater-select-backend-model (&optional quiet choice model-list)
+  "Select the global GPTel backend/model from refreshed model lists.
 Interactively, read backend and model with completion.  Otherwise, entries
 in MODEL-LIST are tried in order.  Each entry may be BACKEND:MODEL, or just
 MODEL to search across `gptel-model-updater-backends'.  If MODEL-LIST is
 nil, use `gptel-model-updater-models'.  If neither list selects a model,
 the first backend with models is selected, and one model is chosen randomly.
 
-When EXTERNAL is non-nil, set variable pairs from
-`gptel-model-updater-external-targets' instead of the global
-gptel-backend/model.  When QUIET is non-nil, do not print the final
-selection.  CHOICE is a cons of BACKEND and MODEL.
-INTERACTIVE-EXTERNAL non-nil means read each target interactively."
+When QUIET is non-nil, do not print the final selection.  CHOICE is a cons
+of BACKEND and MODEL."
   (interactive
-   (if current-prefix-arg
-       (list t nil nil t)
-     (list nil
-           nil
-           (gptel-model-updater--read-backend-model "GPTel "))))
-  (when (gptel-model-updater--hook-args-p external choice)
-    (setq external nil
-          quiet t
-          choice nil
-          interactive-external nil))
+   (list nil
+         (gptel-model-updater--read-backend-model "GPTel ")))
   (setq model-list (gptel-model-updater--effective-model-list model-list))
-  (if external
-      (progn
-        (gptel-model-updater--select-external-targets interactive-external model-list)
-        (unless quiet
-          (message "GPTel external targets set%s"
-                   (mapconcat
-                    (lambda (target)
-                      (pcase-let ((`(,backend-variable ,model-variable . ,_) target))
-                        (format "\n%s: backend=%s model=%s"
-                                (gptel-model-updater--target-label target)
-                                (and (boundp backend-variable)
-                                     (symbol-value backend-variable)
-                                     (gptel-backend-name (symbol-value backend-variable)))
-                                (and (boundp model-variable)
-                                     (symbol-value model-variable)))))
-                    gptel-model-updater-external-targets
-                    ""))))
-    (setq choice (or choice (gptel-model-updater--pick-backend-model model-list)))
-    (gptel-model-updater--set-choice 'gptel-backend 'gptel-model choice)
-    (unless quiet
-      (message "GPTel: backend=%s model=%s"
-               (and (boundp 'gptel-backend) gptel-backend
-                    (gptel-backend-name gptel-backend))
-               (and (boundp 'gptel-model) gptel-model)))))
+  (setq choice (or choice (gptel-model-updater--pick-backend-model model-list)))
+  (gptel-model-updater--set-choice 'gptel-backend 'gptel-model choice)
+  (unless quiet
+    (message "GPTel: backend=%s model=%s"
+             (and (boundp 'gptel-backend) gptel-backend
+                  (gptel-backend-name gptel-backend))
+             (and (boundp 'gptel-model) gptel-model))))
+
+;;;###autoload
+(defun gptel-model-updater-select-external-targets (&optional quiet interactivep model-list)
+  "Select configured external target backend/model variables.
+External targets are configured with `gptel-model-updater-external-targets'.
+When INTERACTIVEP is non-nil, read each target with completion.  Otherwise,
+entries in MODEL-LIST or `gptel-model-updater-models' are tried first.
+When QUIET is non-nil, do not print the final selections."
+  (interactive (list nil t))
+  (setq model-list (gptel-model-updater--effective-model-list model-list))
+  (gptel-model-updater--select-external-targets interactivep model-list)
+  (when (and gptel-model-updater-external-targets (not quiet))
+    (message "GPTel external targets set%s"
+             (mapconcat
+              (lambda (target)
+                (pcase-let ((`(,backend-variable ,model-variable . ,_) target))
+                  (format "\n%s: backend=%s model=%s"
+                          (gptel-model-updater--target-label target)
+                          (and (boundp backend-variable)
+                               (symbol-value backend-variable)
+                               (gptel-backend-name (symbol-value backend-variable)))
+                          (and (boundp model-variable)
+                               (symbol-value model-variable)))))
+              gptel-model-updater-external-targets
+              ""))))
+
+;;;###autoload
+(defun gptel-model-updater-select-all-backend-models (&optional quiet model-list)
+  "Select global and external backend/model variables.
+The global `gptel-backend' and `gptel-model' variables are selected first.
+Then `gptel-model-updater-external-targets' are selected.  MODEL-LIST
+overrides `gptel-model-updater-models'.  When QUIET is non-nil, do not print
+selection messages."
+  (interactive)
+  (setq model-list (gptel-model-updater--effective-model-list model-list))
+  (gptel-model-updater-select-backend-model quiet nil model-list)
+  (gptel-model-updater-select-external-targets quiet nil model-list))
+
+(defun gptel-model-updater-select-all-backend-models-after-update
+    (_backend-name _backend _models)
+  "Select all configured backend/model targets after a backend update."
+  (gptel-model-updater-select-all-backend-models t))
+
+;;;###autoload
+(defun gptel-model-updater-select-backend-models (&optional quiet model-list)
+  "Compatibility alias for `gptel-model-updater-select-all-backend-models'.
+QUIET and MODEL-LIST are passed through."
+  (interactive)
+  (gptel-model-updater-select-all-backend-models quiet model-list))
+
+(make-obsolete 'gptel-model-updater-select-backend-models
+               'gptel-model-updater-select-all-backend-models
+               "0.3.0")
 
 ;;;###autoload
 (defun gptel-model-updater-update-backend (backend-name &optional provider-type url model-list)

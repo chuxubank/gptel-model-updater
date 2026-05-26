@@ -52,7 +52,7 @@ Update models:
 Select a backend/model:
 
 ```elisp
-(gptel-model-updater-select-backend-models)
+(gptel-model-updater-select-all-backend-models)
 ```
 
 ## Filtering
@@ -98,7 +98,9 @@ Omitted keys fall back to the global values. Explicit nil disables that rule for
 
 - `gptel-model-updater-update-backend`
 - `gptel-model-updater-update-all`
-- `gptel-model-updater-select-backend-models`
+- `gptel-model-updater-select-all-backend-models`
+- `gptel-model-updater-select-backend-model`
+- `gptel-model-updater-select-external-targets`
 
 ## Providers
 
