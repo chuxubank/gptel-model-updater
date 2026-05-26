@@ -124,13 +124,20 @@ targets enabled, such as via a `\\[universal-argument]' prefix interactively."
   "Return backend symbols managed by `gptel-model-updater'."
   gptel-model-updater-backends)
 
+(defun gptel-model-updater--backend-p (backend predicate)
+  "Return non-nil when BACKEND satisfies PREDICATE.
+PREDICATE may be undefined if the corresponding gptel provider file has not
+been loaded yet."
+  (and (fboundp predicate)
+       (funcall predicate backend)))
+
 (defun gptel-model-updater--detect-provider (backend)
   "Detect provider type for BACKEND struct.
 Returns one of `openai', `gemini', or `ollama'."
   (cond
-   ((cl-typep backend 'gptel-gemini) 'gemini)
-   ((cl-typep backend 'gptel-ollama) 'ollama)
-   ((cl-typep backend 'gptel-openai) 'openai)
+   ((gptel-model-updater--backend-p backend 'gptel-gemini-p) 'gemini)
+   ((gptel-model-updater--backend-p backend 'gptel-ollama-p) 'ollama)
+   ((gptel-model-updater--backend-p backend 'gptel-openai-p) 'openai)
    (t 'openai)))
 
 (defun gptel-model-updater--build-url (backend provider-type &optional api-key)
