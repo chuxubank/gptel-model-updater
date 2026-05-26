@@ -75,6 +75,20 @@ When nil, keep every model that passes the regexp filters."
                  (integer :tag "Maximum models"))
   :group 'gptel-model-updater)
 
+(defcustom gptel-model-updater-backend-filters nil
+  "Per-backend ingress filters.
+Each entry is (BACKEND-NAME :include INCLUDE :exclude EXCLUDE :max MAX).
+BACKEND-NAME is compared with `gptel-backend-name'.  INCLUDE and EXCLUDE
+are regexps matched against model names.  MAX is the maximum number of
+models to keep after filtering and preferred-model ordering.
+
+Omitted keys fall back to the corresponding global settings:
+`gptel-model-updater-include-model-regexp',
+`gptel-model-updater-exclude-model-regexp', and
+`gptel-model-updater-max-models'."
+  :type '(repeat sexp)
+  :group 'gptel-model-updater)
+
 (defcustom gptel-model-updater-after-update-hook #'gptel-model-updater-select-backend-models
   "Hook run after a backend's models are updated successfully.
 Each function is called with BACKEND-NAME, BACKEND, and MODELS."
@@ -355,24 +369,63 @@ Iterates over `gptel-model-updater-backends' and returns their name strings."
         (setq selected (append selected (list model)))))
     (append selected (cl-remove-if (lambda (model) (memq model selected)) models))))
 
-(defun gptel-model-updater--model-allowed-p (model)
-  "Return non-nil when MODEL passes configured ingress filters."
-  (let ((model-name (symbol-name model)))
-    (and (or (not gptel-model-updater-include-model-regexp)
-             (string-match-p gptel-model-updater-include-model-regexp model-name))
-         (or (not gptel-model-updater-exclude-model-regexp)
-             (not (string-match-p gptel-model-updater-exclude-model-regexp model-name))))))
+(defun gptel-model-updater--backend-filter (backend-name)
+  "Return ingress filter plist configured for BACKEND-NAME."
+  (when backend-name
+    (cdr (cl-find backend-name gptel-model-updater-backend-filters
+                  :key #'car
+                  :test (lambda (name entry-name)
+                          (string= name
+                                   (if (symbolp entry-name)
+                                       (symbol-name entry-name)
+                                     entry-name)))))))
 
-(defun gptel-model-updater--filter-models (models)
-  "Return MODELS that pass configured ingress filters."
-  (cl-remove-if-not #'gptel-model-updater--model-allowed-p models))
+(defun gptel-model-updater--filter-value (backend-name key fallback)
+  "Return BACKEND-NAME filter value for KEY, or FALLBACK when omitted."
+  (let ((filter (gptel-model-updater--backend-filter backend-name)))
+    (if (plist-member filter key)
+        (plist-get filter key)
+      fallback)))
 
-(defun gptel-model-updater--limit-models (models)
-  "Return MODELS limited by `gptel-model-updater-max-models'."
-  (if (and (integerp gptel-model-updater-max-models)
-           (natnump gptel-model-updater-max-models))
-      (seq-take models gptel-model-updater-max-models)
-    models))
+(defun gptel-model-updater--include-regexp (backend-name)
+  "Return effective include regexp for BACKEND-NAME."
+  (gptel-model-updater--filter-value
+   backend-name :include gptel-model-updater-include-model-regexp))
+
+(defun gptel-model-updater--exclude-regexp (backend-name)
+  "Return effective exclude regexp for BACKEND-NAME."
+  (gptel-model-updater--filter-value
+   backend-name :exclude gptel-model-updater-exclude-model-regexp))
+
+(defun gptel-model-updater--max-models (backend-name)
+  "Return effective maximum model count for BACKEND-NAME."
+  (gptel-model-updater--filter-value
+   backend-name :max gptel-model-updater-max-models))
+
+(defun gptel-model-updater--model-allowed-p (model backend-name)
+  "Return non-nil when MODEL passes ingress filters for BACKEND-NAME."
+  (let ((model-name (symbol-name model))
+        (include-regexp (gptel-model-updater--include-regexp backend-name))
+        (exclude-regexp (gptel-model-updater--exclude-regexp backend-name)))
+    (and (or (not include-regexp)
+             (string-match-p include-regexp model-name))
+         (or (not exclude-regexp)
+             (not (string-match-p exclude-regexp model-name))))))
+
+(defun gptel-model-updater--filter-models (models backend-name)
+  "Return MODELS that pass ingress filters for BACKEND-NAME."
+  (cl-remove-if-not
+   (lambda (model)
+     (gptel-model-updater--model-allowed-p model backend-name))
+   models))
+
+(defun gptel-model-updater--limit-models (models backend-name)
+  "Return MODELS limited by the effective maximum for BACKEND-NAME."
+  (let ((max-models (gptel-model-updater--max-models backend-name)))
+    (if (and (integerp max-models)
+             (natnump max-models))
+        (seq-take models max-models)
+      models)))
 
 (defun gptel-model-updater--prepare-models (models &optional model-list backend-name)
   "Filter, order, and limit MODELS for BACKEND-NAME.
@@ -380,9 +433,10 @@ MODEL-LIST contains preferred model entries moved to the front before the
 maximum model count is applied."
   (gptel-model-updater--limit-models
    (gptel-model-updater--order-models
-    (gptel-model-updater--filter-models models)
+    (gptel-model-updater--filter-models models backend-name)
     model-list
-    backend-name)))
+    backend-name)
+   backend-name))
 
 (defun gptel-model-updater--pick-backend-model (&optional model-list)
   "Pick an available backend/model.

@@ -11,7 +11,7 @@ This package is intentionally a basic convenience layer. It blindly imports mode
 
 - Fetches available models from OpenAI-compatible APIs, Ollama, and Gemini
 - Updates `gptel-backend-models` on each backend struct automatically
-- Limits model ingress with include/exclude regexps and a maximum model count
+- Limits model ingress globally or per backend with include/exclude regexps and a maximum model count
 - Respects `gptel-use-curl`: uses async curl when enabled, otherwise Emacs `url-retrieve`
 - Keeps the provider's model order by default, with optional alphabetical sorting
 - Auto-selects a preferred (backend . model) pair after update
@@ -83,6 +83,7 @@ Emacs 30+ has `vc-use-package` built-in; on earlier versions install it from [Gi
 Some providers may expose a very large number of models from the same endpoint. Configure ingress controls to keep completion lists and backend state small:
 
 ```elisp
+;; Global defaults for every refreshed backend.
 (setq gptel-model-updater-include-model-regexp
       "\\`\\(openai/\\|anthropic/\\|google/\\)")
 (setq gptel-model-updater-exclude-model-regexp
@@ -91,6 +92,25 @@ Some providers may expose a very large number of models from the same endpoint. 
 ```
 
 Set `gptel-model-updater-max-models` to nil if you explicitly want to keep every fetched model that passes the regexp filters.
+
+You can override these controls for individual backends by matching the backend display name:
+
+```elisp
+(setq gptel-model-updater-backend-filters
+      '(("OpenRouter"
+         :include "\\`\\(openai/\\|anthropic/\\|google/\\)"
+         :exclude "\\(preview\\|beta\\|free\\)"
+         :max 80)
+        ("Ollama"
+         :include nil
+         :exclude nil
+         :max nil)
+        ("Gemini"
+         :include "\\`gemini-"
+         :max 50)))
+```
+
+Omitted keys fall back to the global values. Use explicit nil values when a backend should disable a global include, exclude, or max rule.
 
 ## Customization
 
@@ -120,6 +140,16 @@ Drop fetched model names matching this regexp. The default is nil, which exclude
 ### `gptel-model-updater-max-models`
 
 Maximum number of models written to each refreshed backend after regexp filtering and preferred-model ordering. The default is 200. Set it to nil to disable the limit.
+
+### `gptel-model-updater-backend-filters`
+
+Per-backend ingress controls. Each entry has this shape:
+
+```elisp
+(BACKEND-NAME :include INCLUDE-REGEXP :exclude EXCLUDE-REGEXP :max MAX-MODELS)
+```
+
+`BACKEND-NAME` is compared with `gptel-backend-name`. Any omitted key falls back to the corresponding global setting. Explicit nil values disable that setting for the backend.
 
 ### `gptel-model-updater-external-targets`
 
