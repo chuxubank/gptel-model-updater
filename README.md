@@ -4,6 +4,7 @@
 [![CI](https://github.com/chuxubank/gptel-model-updater/actions/workflows/ci.yml/badge.svg)](https://github.com/chuxubank/gptel-model-updater/actions/workflows/ci.yml)
 
 Fetch model IDs for [gptel](https://github.com/karthink/gptel) backends and write them to `gptel-backend-models`.
+When available, model metadata is loaded from [models.dev](https://models.dev) and applied as gptel model properties such as context window, cost, capabilities, MIME types, and knowledge cutoff.
 
 This is a blind convenience layer: it imports model IDs only. It does not verify cost, context length, tool support, release date, deprecation state, or provider policy. Check provider documentation before using a model.
 
@@ -91,6 +92,8 @@ Omitted keys fall back to the global values. Explicit nil disables that rule for
 - `gptel-model-updater-include-model-regexp`: keep only matching model names.
 - `gptel-model-updater-exclude-model-regexp`: drop matching model names.
 - `gptel-model-updater-backend-filters`: per-backend include/exclude/max rules.
+- `gptel-model-updater-model-metadata-url`: models.dev metadata URL; set to nil to disable model properties.
+- `gptel-model-updater-provider-host-alist`: user host to models.dev provider mappings; overrides built-in host matching.
 - `gptel-model-updater-sort-models`: sort models alphabetically; default nil keeps provider order.
 - `gptel-model-updater-timeout`: curl timeout in seconds.
 

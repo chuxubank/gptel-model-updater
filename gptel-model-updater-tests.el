@@ -58,5 +58,62 @@
              "Ollama")
             '(openai/gpt-4o local/llama google/gemini)))))
 
+(ert-deftest gptel-model-updater-metadata-openai-plist ()
+  "models.dev metadata maps to gptel model properties."
+  (let* ((backend (gptel-make-openai "metadata-openai-test"
+                    :host "api.openai.com"
+                    :models '()))
+         (metadata
+          '((openai
+             (models
+              (gpt-4o
+               (id . "gpt-4o")
+               (name . "GPT-4o")
+               (attachment . t)
+               (reasoning . :json-false)
+               (tool_call . t)
+               (structured_output . t)
+               (knowledge . "2023-10")
+               (modalities . ((input . ["text" "image"])
+                              (output . ["text"])))
+               (limit . ((context . 128000)))
+               (cost . ((input . 2.5)
+                        (output . 10))))))))
+         (gptel-model-updater-metadata--cache metadata)
+         (gptel-model-updater-metadata--cache-url gptel-model-updater-model-metadata-url))
+    (gptel-model-updater-metadata-apply '(gpt-4o) backend 'openai)
+    (should (equal (symbol-plist 'gpt-4o)
+                   '(:description "GPT-4o"
+                     :capabilities (media tool-use json url responses-api)
+                     :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp")
+                     :context-window 128
+                     :input-cost 2.5
+                     :output-cost 10
+                     :cutoff-date "2023-10")))))
+
+(ert-deftest gptel-model-updater-metadata-fetch-respects-curl-setting ()
+  "Metadata fetching follows `gptel-use-curl'."
+  (cl-letf (((symbol-function 'gptel-model-updater-metadata--fetch-with-curl)
+             (lambda (_url) 'curl))
+            ((symbol-function 'gptel-model-updater-metadata--fetch-with-url)
+             (lambda (_url) 'url)))
+    (let ((gptel-use-curl t))
+      (should (eq (gptel-model-updater-metadata--fetch "https://example.com")
+                  'curl)))
+    (let ((gptel-use-curl nil))
+      (should (eq (gptel-model-updater-metadata--fetch "https://example.com")
+                  'url)))))
+
+(ert-deftest gptel-model-updater-metadata-user-host-mapping-wins ()
+  "User host mappings override built-in provider mappings."
+  (let ((backend (gptel-make-openai "metadata-host-test"
+                   :host "api.openai.com"
+                   :models '()))
+        (gptel-model-updater-provider-host-alist
+         '(("api.openai.com" . openrouter))))
+    (should (eq (gptel-model-updater-metadata--provider-key
+                 backend 'openai '((openai) (openrouter)))
+                'openrouter))))
+
 (provide 'gptel-model-updater-tests)
 ;;; gptel-model-updater-tests.el ends here

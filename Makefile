@@ -34,6 +34,7 @@ lint:
 build:
 	$(BATCH) $(ARCHIVES) $(LOAD_PATH) \
 	  --eval "(setq byte-compile-error-on-warn t)" \
+	  --eval "(byte-compile-file \"gptel-model-updater-metadata.el\")" \
 	  --eval "(byte-compile-file \"gptel-model-updater.el\")"
 
 test:

@@ -42,6 +42,8 @@
   "GPTel model updater settings."
   :group 'gptel)
 
+(require 'gptel-model-updater-metadata)
+
 (defcustom gptel-model-updater-timeout 30
   "Timeout for API requests in seconds."
   :type 'number
@@ -639,7 +641,8 @@ URL overrides the default endpoint.  MODEL-LIST orders available models."
                                  backend-name)))
                (if (not new-models)
                    (message "GPTel-Model-Updater: No models found for %s" backend-name)
-                 (setf (gptel-backend-models backend) new-models)
+                  (gptel-model-updater-metadata-apply new-models backend provider)
+                  (setf (gptel-backend-models backend) new-models)
                  (message "GPTel-Model-Updater: Updated %s with %d models%s"
                           backend-name
                           (length new-models)
