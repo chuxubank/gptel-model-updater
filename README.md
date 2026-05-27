@@ -89,23 +89,23 @@ Omitted keys fall back to the global values. Explicit nil disables that rule for
 Model metadata is matched from models.dev automatically. For proxy or gateway backends, configure the models.dev providers explicitly:
 
 ```elisp
-(setq gptel-model-updater-backend-provider-alist
-      '((gptel--my-openrouter . (openrouter openai anthropic google))
-        ("My Gateway" . (openrouter openai))))
+(setq gptel-model-updater-backends
+      '(gptel--my-openai
+        (gptel--my-openrouter :providers (openrouter openai anthropic google))
+        (gptel--my-gateway :providers (all))))
 ```
 
-Entries may use backend variable symbols from `gptel-model-updater-backends` or backend display names. Providers are tried in order for each model.
+Providers are tried in order for each model. The special provider `all` searches every models.dev provider and uses the first matching model metadata.
 
 ## Options
 
-- `gptel-model-updater-backends`: backend variables to update.
+- `gptel-model-updater-backends`: backend variables or backend specs to update; specs may include `:providers` for metadata matching.
 - `gptel-model-updater-models`: preferred `BACKEND:MODEL` entries.
 - `gptel-model-updater-max-models`: maximum models kept after filtering, default 200.
 - `gptel-model-updater-include-model-regexp`: keep only matching model names.
 - `gptel-model-updater-exclude-model-regexp`: drop matching model names.
 - `gptel-model-updater-backend-filters`: per-backend include/exclude/max rules.
 - `gptel-model-updater-model-metadata-url`: models.dev metadata URL; set to nil to disable model properties.
-- `gptel-model-updater-backend-provider-alist`: user backend to models.dev provider mappings; supports multiple providers and overrides host matching.
 - `gptel-model-updater-sort-models`: sort models alphabetically; default nil keeps provider order.
 - `gptel-model-updater-timeout`: curl timeout in seconds.
 - `gptel-model-updater-after-update-hook`: hook run after each backend update, called with backend name, backend, and models.

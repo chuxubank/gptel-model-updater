@@ -104,25 +104,14 @@
       (should (eq (gptel-model-updater-metadata--fetch "https://example.com")
                   'url)))))
 
-(ert-deftest gptel-model-updater-metadata-backend-name-mapping-wins ()
-  "Backend name mappings override built-in provider mappings."
-  (let ((backend (gptel-make-openai "metadata-host-test"
-                   :host "api.openai.com"
-                   :models '()))
-        (gptel-model-updater-backend-provider-alist
-         '(("metadata-host-test" . openrouter))))
-    (should (eq (gptel-model-updater-metadata--provider-key
-                 backend 'openai '((openai) (openrouter)))
-                'openrouter))))
-
-(ert-deftest gptel-model-updater-metadata-backend-provider-mapping-wins ()
-  "Backend mappings override automatic matching and support many providers."
+(ert-deftest gptel-model-updater-metadata-backend-spec-providers-win ()
+  "Backend spec providers override automatic matching and support many providers."
   (let* ((backend (gptel-make-openai "metadata-backend-test"
                     :host "api.openai.com"
                     :models '()))
-         (gptel-model-updater-backends '(gptel-model-updater--test-backend))
-         (gptel-model-updater-backend-provider-alist
-          '((gptel-model-updater--test-backend . (openrouter anthropic)))))
+         (gptel-model-updater-backends
+          '((gptel-model-updater--test-backend
+             :providers (openrouter anthropic)))))
     (unwind-protect
         (progn
           (set 'gptel-model-updater--test-backend backend)
@@ -136,8 +125,9 @@
   (let* ((backend (gptel-make-openai "metadata-multi-provider-test"
                     :host "api.openai.com"
                     :models '()))
-         (gptel-model-updater-backend-provider-alist
-          '(("metadata-multi-provider-test" . (openrouter openai))))
+         (gptel-model-updater-backends
+          '((gptel-model-updater--multi-provider-test-backend
+             :providers (openrouter openai))))
          (metadata
           '((openrouter
              (models
@@ -163,13 +153,47 @@
          (gptel-model-updater-metadata--cache-url gptel-model-updater-model-metadata-url))
     (unwind-protect
         (progn
+          (set 'gptel-model-updater--multi-provider-test-backend backend)
           (gptel-model-updater-metadata-apply '(gpt-4o openai/gpt-4o)
                                               backend 'openai)
           (should (equal (get 'gpt-4o :description) "OpenAI GPT-4o"))
           (should (equal (get 'openai/gpt-4o :description)
                          "OpenRouter GPT-4o")))
+      (makunbound 'gptel-model-updater--multi-provider-test-backend)
       (setf (symbol-plist 'gpt-4o) nil
             (symbol-plist 'openai/gpt-4o) nil))))
+
+(ert-deftest gptel-model-updater-metadata-all-provider-searches-everywhere ()
+  "The special provider `all' searches every models.dev provider."
+  (let* ((backend (gptel-make-openai "metadata-all-provider-test"
+                    :host "example.invalid"
+                    :models '()))
+         (gptel-model-updater-backends
+          '((gptel-model-updater--all-provider-test-backend :providers (all))))
+         (metadata
+          '((openrouter
+             (models
+              (gpt-4o
+               (name . "First GPT-4o")
+               (modalities . ((input . ["text"])
+                              (output . ["text"])))
+               (limit . ((context . 64000))))))
+            (openai
+             (models
+              (gpt-4o
+               (name . "OpenAI GPT-4o")
+               (modalities . ((input . ["text"])
+                              (output . ["text"])))
+               (limit . ((context . 128000))))))))
+         (gptel-model-updater-metadata--cache metadata)
+         (gptel-model-updater-metadata--cache-url gptel-model-updater-model-metadata-url))
+    (unwind-protect
+        (progn
+          (set 'gptel-model-updater--all-provider-test-backend backend)
+          (gptel-model-updater-metadata-apply '(gpt-4o) backend 'openai)
+          (should (equal (get 'gpt-4o :description) "First GPT-4o")))
+      (makunbound 'gptel-model-updater--all-provider-test-backend)
+      (setf (symbol-plist 'gpt-4o) nil))))
 
 (ert-deftest gptel-model-updater-format-model-annotation-uses-plist ()
   "Interactive model annotations display gptel model properties."

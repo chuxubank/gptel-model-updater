@@ -103,8 +103,12 @@ Each function is called with BACKEND-NAME, BACKEND, and MODELS."
   :group 'gptel-model-updater)
 
 (defcustom gptel-model-updater-backends nil
-  "GPTel backend symbols managed by `gptel-model-updater'."
-  :type '(repeat symbol)
+  "GPTel backends managed by `gptel-model-updater'.
+Each entry may be a backend variable symbol, or (BACKEND :providers PROVIDERS).
+BACKEND is a backend variable symbol.  PROVIDERS is a models.dev provider key
+symbol or a list of provider key symbols tried in order for metadata.  The
+special provider key `all' searches all models.dev providers."
+  :type '(repeat (choice symbol sexp))
   :group 'gptel-model-updater)
 
 (defcustom gptel-model-updater-models nil
@@ -129,7 +133,33 @@ target.  These targets are selected and set when
 
 (defun gptel-model-updater--backends ()
   "Return backend symbols managed by `gptel-model-updater'."
-  gptel-model-updater-backends)
+  (delq nil (mapcar #'gptel-model-updater--backend-spec-symbol
+                    gptel-model-updater-backends)))
+
+(defun gptel-model-updater--backend-spec-symbol (spec)
+  "Return backend variable symbol from SPEC."
+  (cond
+   ((symbolp spec) spec)
+   ((and (consp spec) (symbolp (car spec))) (car spec))))
+
+(defun gptel-model-updater--backend-spec-providers (spec)
+  "Return metadata providers configured in backend SPEC."
+  (when (consp spec)
+    (let ((providers (plist-get (cdr spec) :providers)))
+      (cond
+       ((null providers) nil)
+       ((listp providers) providers)
+       (t (list providers))))))
+
+(defun gptel-model-updater--backend-providers (backend)
+  "Return metadata providers configured for BACKEND."
+  (catch 'providers
+    (dolist (spec gptel-model-updater-backends)
+      (when-let* ((symbol (gptel-model-updater--backend-spec-symbol spec))
+                  ((boundp symbol))
+                  ((eq (symbol-value symbol) backend)))
+        (throw 'providers
+               (gptel-model-updater--backend-spec-providers spec))))))
 
 (defun gptel-model-updater--backend-p (backend predicate)
   "Return non-nil when BACKEND satisfies PREDICATE.
