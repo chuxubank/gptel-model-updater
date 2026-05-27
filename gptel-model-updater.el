@@ -493,17 +493,17 @@ the first available managed backend and a random model."
     (when (or desc caps context input-cost output-cost cutoff)
       (concat
        (propertize " " 'display `(space :align-to 40))
-       (when desc (truncate-string-to-width desc 70 nil ? t t))
-       " " (propertize " " 'display `(space :align-to 112))
-       (when caps (truncate-string-to-width (prin1-to-string caps) 21 nil ? t t))
-       " " (propertize " " 'display `(space :align-to 134))
+       (when desc (truncate-string-to-width desc 50 nil ? t t))
+       " " (propertize " " 'display `(space :align-to 92))
+       (when caps (truncate-string-to-width (prin1-to-string caps) 56 nil ? t t))
+       " " (propertize " " 'display `(space :align-to 150))
        (when context (format "%5dk" context))
-       " " (propertize " " 'display `(space :align-to 142))
+       " " (propertize " " 'display `(space :align-to 158))
        (when input-cost (format "$%5.2f in" input-cost))
        (if (and input-cost output-cost) "," " ")
-       " " (propertize " " 'display `(space :align-to 153))
+       " " (propertize " " 'display `(space :align-to 169))
        (when output-cost (format "$%6.2f out" output-cost))
-       " " (propertize " " 'display `(space :align-to 166))
+       " " (propertize " " 'display `(space :align-to 182))
        cutoff))))
 
 (defun gptel-model-updater--read-model-name (prompt models)
@@ -546,7 +546,7 @@ PROMPT-PREFIX is prepended to completion prompts."
 
 (defun gptel-model-updater--format-default-target ()
   "Return a display string for the default GPTel target."
-  (format "Default: backend=%s model=%s"
+  (format "GPTel: backend=%s model=%s"
           (and (boundp 'gptel-backend) gptel-backend
                (gptel-backend-name gptel-backend))
           (and (boundp 'gptel-model) gptel-model)))
