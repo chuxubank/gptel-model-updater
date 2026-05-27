@@ -193,5 +193,26 @@
             (should (string-match-p "2024-01" annotation))))
       (setf (symbol-plist model) nil))))
 
+(ert-deftest gptel-model-updater-update-all-runs-after-hook ()
+  "Update-all hook runs once after backend updates are scheduled."
+  (let ((gptel-model-updater--test-hook-calls 0)
+        (gptel-model-updater-backends '(gptel-model-updater--test-backend))
+        (gptel-model-updater-after-update-all-hook
+         '(gptel-model-updater--test-after-update-all)))
+    (cl-letf (((symbol-function 'gptel-model-updater-update-backend)
+               (lambda (&rest _args) nil))
+              ((symbol-function 'gptel-model-updater--test-after-update-all)
+               (lambda (&rest _args) nil)))
+      (unwind-protect
+          (progn
+            (cl-letf (((symbol-function 'gptel-model-updater--test-after-update-all)
+                       (lambda ()
+                         (cl-incf gptel-model-updater--test-hook-calls))))
+              (set 'gptel-model-updater--test-backend
+                   (gptel-make-openai "update-all-hook-test" :models '()))
+              (gptel-model-updater-update-all))
+            (should (= gptel-model-updater--test-hook-calls 1)))
+        (makunbound 'gptel-model-updater--test-backend)))))
+
 (provide 'gptel-model-updater-tests)
 ;;; gptel-model-updater-tests.el ends here

@@ -96,6 +96,8 @@ Omitted keys fall back to the global values. Explicit nil disables that rule for
 - `gptel-model-updater-backend-provider-alist`: user backend to models.dev provider mappings; supports multiple providers and overrides host matching.
 - `gptel-model-updater-sort-models`: sort models alphabetically; default nil keeps provider order.
 - `gptel-model-updater-timeout`: curl timeout in seconds.
+- `gptel-model-updater-after-update-hook`: hook run after each backend update, called with backend name, backend, and models.
+- `gptel-model-updater-after-update-all-hook`: hook run after updating all backends; defaults to selecting configured targets.
 
 ## Commands
 

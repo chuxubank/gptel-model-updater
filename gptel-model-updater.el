@@ -91,9 +91,14 @@ Omitted keys fall back to the corresponding global settings:
   :type '(repeat sexp)
   :group 'gptel-model-updater)
 
-(defcustom gptel-model-updater-after-update-hook #'gptel-model-updater-select-all-targets-after-update
+(defcustom gptel-model-updater-after-update-hook nil
   "Hook run after a backend's models are updated successfully.
 Each function is called with BACKEND-NAME, BACKEND, and MODELS."
+  :type 'hook
+  :group 'gptel-model-updater)
+
+(defcustom gptel-model-updater-after-update-all-hook #'gptel-model-updater-select-all-targets
+  "Hook run after `gptel-model-updater-update-all' finishes all backends."
   :type 'hook
   :group 'gptel-model-updater)
 
@@ -641,11 +646,6 @@ With \\[universal-argument], interactively select each target."
       (message "GPTel targets set\n%s"
                (gptel-model-updater--format-all-targets)))))
 
-(defun gptel-model-updater-select-all-targets-after-update
-    (_backend-name _backend _models)
-  "Select all configured targets after a backend update."
-  (gptel-model-updater-select-all-targets t))
-
 ;;;###autoload
 (defun gptel-model-updater-update-backend (backend-name &optional provider-type url model-list)
   "Update models for BACKEND-NAME.
@@ -696,7 +696,8 @@ MODEL-LIST orders available models."
       (let ((name (gptel-backend-name (symbol-value sym))))
         (condition-case err
             (gptel-model-updater-update-backend name nil nil model-list)
-          (error (message "GPTel-Model-Updater: Failed to update %s: %s" name err)))))))
+          (error (message "GPTel-Model-Updater: Failed to update %s: %s" name err))))))
+  (run-hooks 'gptel-model-updater-after-update-all-hook))
 
 (provide 'gptel-model-updater)
 ;;; gptel-model-updater.el ends here
