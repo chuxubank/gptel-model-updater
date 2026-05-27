@@ -200,7 +200,8 @@
         (gptel-model-updater-after-update-all-hook
          '(gptel-model-updater--test-after-update-all)))
     (cl-letf (((symbol-function 'gptel-model-updater-update-backend)
-               (lambda (&rest _args) nil))
+               (lambda (&rest args)
+                 (funcall (car (last args)))))
               ((symbol-function 'gptel-model-updater--test-after-update-all)
                (lambda (&rest _args) nil)))
       (unwind-protect
@@ -213,6 +214,39 @@
               (gptel-model-updater-update-all))
             (should (= gptel-model-updater--test-hook-calls 1)))
         (makunbound 'gptel-model-updater--test-backend)))))
+
+(ert-deftest gptel-model-updater-update-all-waits-for-callbacks ()
+  "Update-all hook waits until every backend callback finishes."
+  (let ((callbacks nil)
+        (events nil)
+        (gptel-model-updater--test-hook-calls 0)
+        (gptel-model-updater-backends '(gptel-model-updater--test-backend-a
+                                        gptel-model-updater--test-backend-b))
+        (gptel-model-updater-after-update-all-hook
+         '(gptel-model-updater--test-after-update-all)))
+    (cl-letf (((symbol-function 'gptel-model-updater-update-backend)
+               (lambda (name &rest args)
+                 (push name events)
+                 (push (car (last args)) callbacks)))
+              ((symbol-function 'gptel-model-updater--test-after-update-all)
+               (lambda ()
+                 (cl-incf gptel-model-updater--test-hook-calls)
+                 (push 'all-hook events))))
+      (unwind-protect
+          (progn
+            (set 'gptel-model-updater--test-backend-a
+                 (gptel-make-openai "update-all-callback-test-a" :models '()))
+            (set 'gptel-model-updater--test-backend-b
+                 (gptel-make-openai "update-all-callback-test-b" :models '()))
+            (gptel-model-updater-update-all)
+            (should (= gptel-model-updater--test-hook-calls 0))
+            (funcall (pop callbacks))
+            (should (= gptel-model-updater--test-hook-calls 0))
+            (funcall (pop callbacks))
+            (should (= gptel-model-updater--test-hook-calls 1))
+            (should (eq (car events) 'all-hook)))
+        (makunbound 'gptel-model-updater--test-backend-a)
+        (makunbound 'gptel-model-updater--test-backend-b)))))
 
 (provide 'gptel-model-updater-tests)
 ;;; gptel-model-updater-tests.el ends here

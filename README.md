@@ -84,6 +84,18 @@ Per-backend filters override the global settings:
 
 Omitted keys fall back to the global values. Explicit nil disables that rule for the backend.
 
+## Model metadata
+
+Model metadata is matched from models.dev automatically. For proxy or gateway backends, configure the models.dev providers explicitly:
+
+```elisp
+(setq gptel-model-updater-backend-provider-alist
+      '((gptel--my-openrouter . (openrouter openai anthropic google))
+        ("My Gateway" . (openrouter openai))))
+```
+
+Entries may use backend variable symbols from `gptel-model-updater-backends` or backend display names. Providers are tried in order for each model.
+
 ## Options
 
 - `gptel-model-updater-backends`: backend variables to update.

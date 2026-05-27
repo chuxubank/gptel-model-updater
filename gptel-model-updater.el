@@ -647,11 +647,13 @@ With \\[universal-argument], interactively select each target."
                (gptel-model-updater--format-all-targets)))))
 
 ;;;###autoload
-(defun gptel-model-updater-update-backend (backend-name &optional provider-type url model-list)
+(defun gptel-model-updater-update-backend
+    (backend-name &optional provider-type url model-list done-callback)
   "Update models for BACKEND-NAME.
 PROVIDER-TYPE can be `openai', `ollama', or `gemini'.
 If nil, it is auto-detected from the backend struct type.
-URL overrides the default endpoint.  MODEL-LIST orders available models."
+URL overrides the default endpoint.  MODEL-LIST orders available models.
+DONE-CALLBACK is called after this backend update finishes."
   (interactive
    (let ((backends (gptel-model-updater--get-backends)))
      (list (completing-read "Backend: " backends nil t))))
@@ -660,44 +662,59 @@ URL overrides the default endpoint.  MODEL-LIST orders available models."
          (key-source (gptel-backend-key backend))
          (api-key (gptel-model-updater--get-api-key backend key-source)))
     (if (and (memq provider '(openai gemini)) key-source (not api-key))
-        (message "GPTel-Model-Updater: Skipping %s, no API key found" backend-name)
+        (progn
+          (message "GPTel-Model-Updater: Skipping %s, no API key found" backend-name)
+          (when done-callback
+            (funcall done-callback)))
       (let ((fetch-url (or url (gptel-model-updater--build-url backend provider api-key)))
             (headers (gptel-model-updater--build-headers provider api-key)))
         (gptel-model-updater--fetch-models
          backend-name provider fetch-url headers
          (lambda (success raw-data error-msg)
-           (if (not success)
-               (message "GPTel-Model-Updater Error: %s (%s)" backend-name error-msg)
-             (let* ((parsed-models (gptel-model-updater--parse-models raw-data provider))
-                    (new-models (gptel-model-updater--prepare-models
-                                 parsed-models
-                                 (gptel-model-updater--effective-model-list model-list)
-                                 backend-name)))
-               (if (not new-models)
-                   (message "GPTel-Model-Updater: No models found for %s" backend-name)
-                 (gptel-model-updater-metadata-apply new-models backend provider)
-                 (setf (gptel-backend-models backend) new-models)
-                 (message "GPTel-Model-Updater: Updated %s with %d models%s"
-                          backend-name
-                          (length new-models)
-                          (if (= (length new-models) (length parsed-models))
-                              ""
-                            (format " from %d fetched models" (length parsed-models))))
-                 (run-hook-with-args 'gptel-model-updater-after-update-hook
-                                     backend-name backend new-models))))))))))
+           (unwind-protect
+               (if (not success)
+                   (message "GPTel-Model-Updater Error: %s (%s)" backend-name error-msg)
+                 (let* ((parsed-models (gptel-model-updater--parse-models raw-data provider))
+                        (new-models (gptel-model-updater--prepare-models
+                                     parsed-models
+                                     (gptel-model-updater--effective-model-list model-list)
+                                     backend-name)))
+                   (if (not new-models)
+                       (message "GPTel-Model-Updater: No models found for %s" backend-name)
+                     (gptel-model-updater-metadata-apply new-models backend provider)
+                     (setf (gptel-backend-models backend) new-models)
+                     (message "GPTel-Model-Updater: Updated %s with %d models%s"
+                              backend-name
+                              (length new-models)
+                              (if (= (length new-models) (length parsed-models))
+                                  ""
+                                (format " from %d fetched models" (length parsed-models))))
+                     (run-hook-with-args 'gptel-model-updater-after-update-hook
+                                         backend-name backend new-models))))
+             (when done-callback
+               (funcall done-callback)))))))))
 
 ;;;###autoload
 (defun gptel-model-updater-update-all (&optional model-list)
   "Update models for all configured GPTel backends.
 MODEL-LIST orders available models."
   (interactive)
-  (dolist (sym (gptel-model-updater--backends))
-    (when (and (symbolp sym) (boundp sym))
-      (let ((name (gptel-backend-name (symbol-value sym))))
-        (condition-case err
-            (gptel-model-updater-update-backend name nil nil model-list)
-          (error (message "GPTel-Model-Updater: Failed to update %s: %s" name err))))))
-  (run-hooks 'gptel-model-updater-after-update-all-hook))
+  (let* ((backend-names (cl-loop for sym in (gptel-model-updater--backends)
+                                 when (and (symbolp sym) (boundp sym))
+                                 collect (gptel-backend-name (symbol-value sym))))
+         (remaining (length backend-names)))
+    (cl-labels ((done ()
+                  (cl-decf remaining)
+                  (when (<= remaining 0)
+                    (run-hooks 'gptel-model-updater-after-update-all-hook))))
+      (if (zerop remaining)
+          (run-hooks 'gptel-model-updater-after-update-all-hook)
+        (dolist (name backend-names)
+          (condition-case err
+              (gptel-model-updater-update-backend name nil nil model-list #'done)
+            (error
+             (message "GPTel-Model-Updater: Failed to update %s: %s" name err)
+             (done))))))))
 
 (provide 'gptel-model-updater)
 ;;; gptel-model-updater.el ends here
