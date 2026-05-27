@@ -477,6 +477,41 @@ the first available managed backend and a random model."
                      (gptel-backend-models (symbol-value backend-symbol)))
            collect (symbol-value backend-symbol)))
 
+(defun gptel-model-updater--format-model-annotation (model)
+  "Return completion annotation for MODEL metadata."
+  (let ((desc (get model :description))
+        (caps (get model :capabilities))
+        (context (get model :context-window))
+        (input-cost (get model :input-cost))
+        (output-cost (get model :output-cost))
+        (cutoff (get model :cutoff-date)))
+    (when (or desc caps context input-cost output-cost cutoff)
+      (concat
+       (propertize " " 'display `(space :align-to 40))
+       (when desc (truncate-string-to-width desc 70 nil ? t t))
+       " " (propertize " " 'display `(space :align-to 112))
+       (when caps (truncate-string-to-width (prin1-to-string caps) 21 nil ? t t))
+       " " (propertize " " 'display `(space :align-to 134))
+       (when context (format "%5dk" context))
+       " " (propertize " " 'display `(space :align-to 142))
+       (when input-cost (format "$%5.2f in" input-cost))
+       (if (and input-cost output-cost) "," " ")
+       " " (propertize " " 'display `(space :align-to 153))
+       (when output-cost (format "$%6.2f out" output-cost))
+       " " (propertize " " 'display `(space :align-to 166))
+       cutoff))))
+
+(defun gptel-model-updater--read-model-name (prompt models)
+  "Read a model name from MODELS with metadata annotations."
+  (let* ((model-names (mapcar #'symbol-name models))
+         (models-alist (cl-mapcar #'cons model-names models))
+         (completion-extra-properties
+          `(:annotation-function
+            ,(lambda (comp)
+               (when-let* ((model (cdr (assoc comp models-alist))))
+                 (gptel-model-updater--format-model-annotation model))))))
+    (completing-read prompt model-names nil t)))
+
 (defun gptel-model-updater--read-backend-model (&optional prompt-prefix)
   "Read a backend and model interactively.
 PROMPT-PREFIX is prepended to completion prompts."
@@ -489,10 +524,9 @@ PROMPT-PREFIX is prepended to completion prompts."
          (backend (cl-find backend-name backends
                            :key #'gptel-backend-name
                            :test #'string=))
-         (model-name (completing-read
+         (model-name (gptel-model-updater--read-model-name
                       (format "%sModel: " prompt-prefix)
-                      (mapcar #'symbol-name (gptel-backend-models backend))
-                      nil t)))
+                      (gptel-backend-models backend))))
     (cons backend (intern model-name))))
 
 (defun gptel-model-updater--set-choice (backend-variable model-variable choice)
@@ -641,8 +675,8 @@ URL overrides the default endpoint.  MODEL-LIST orders available models."
                                  backend-name)))
                (if (not new-models)
                    (message "GPTel-Model-Updater: No models found for %s" backend-name)
-                  (gptel-model-updater-metadata-apply new-models backend provider)
-                  (setf (gptel-backend-models backend) new-models)
+                 (gptel-model-updater-metadata-apply new-models backend provider)
+                 (setf (gptel-backend-models backend) new-models)
                  (message "GPTel-Model-Updater: Updated %s with %d models%s"
                           backend-name
                           (length new-models)

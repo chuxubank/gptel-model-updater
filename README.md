@@ -93,7 +93,7 @@ Omitted keys fall back to the global values. Explicit nil disables that rule for
 - `gptel-model-updater-exclude-model-regexp`: drop matching model names.
 - `gptel-model-updater-backend-filters`: per-backend include/exclude/max rules.
 - `gptel-model-updater-model-metadata-url`: models.dev metadata URL; set to nil to disable model properties.
-- `gptel-model-updater-provider-host-alist`: user host to models.dev provider mappings; overrides built-in host matching.
+- `gptel-model-updater-backend-provider-alist`: user backend to models.dev provider mappings; supports multiple providers and overrides host matching.
 - `gptel-model-updater-sort-models`: sort models alphabetically; default nil keeps provider order.
 - `gptel-model-updater-timeout`: curl timeout in seconds.
 

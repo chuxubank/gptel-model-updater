@@ -25,15 +25,19 @@ When nil, refreshed models are written without additional model properties."
                  string)
   :group 'gptel-model-updater)
 
-(defcustom gptel-model-updater-provider-host-alist nil
-  "User mappings from backend hosts to models.dev provider keys.
-Each entry is (HOST . PROVIDER).  HOST is matched against
-`gptel-backend-host', and PROVIDER is a models.dev provider key symbol.
-User mappings take precedence over built-in provider host mappings."
-  :type '(alist :key-type string :value-type symbol)
+(defcustom gptel-model-updater-backend-provider-alist nil
+  "User mappings from updater backends to models.dev provider keys.
+Each entry is (BACKEND . PROVIDERS).  BACKEND may be a backend variable
+symbol from `gptel-model-updater-backends' or a backend display name string.
+PROVIDERS is a models.dev provider key symbol or a list of provider key
+symbols.  Backend mappings take precedence over automatic host matching."
+  :type '(alist :key-type (choice symbol string)
+                :value-type (choice symbol (repeat symbol)))
   :group 'gptel-model-updater)
 
 (defvar gptel-model-updater-timeout)
+
+(defvar gptel-model-updater-backends)
 
 (defvar gptel-model-updater-metadata--cache nil
   "Cached models.dev provider metadata.")
@@ -147,27 +151,77 @@ User mappings take precedence over built-in provider host mappings."
               (host (url-host url)))
     (downcase host)))
 
-(defun gptel-model-updater-metadata--provider-key (backend provider-type metadata)
-  "Return models.dev provider key for BACKEND and PROVIDER-TYPE in METADATA."
+(defun gptel-model-updater-metadata--provider-list (providers)
+  "Return PROVIDERS as a provider key list."
+  (cond
+   ((null providers) nil)
+   ((listp providers) providers)
+   (t (list providers))))
+
+(defun gptel-model-updater-metadata--backend-symbol (backend)
+  "Return updater backend variable symbol for BACKEND, when configured."
+  (cl-find-if (lambda (symbol)
+                (and (symbolp symbol)
+                     (boundp symbol)
+                     (eq (symbol-value symbol) backend)))
+              gptel-model-updater-backends))
+
+(defun gptel-model-updater-metadata--backend-provider-entry (backend)
+  "Return user provider mapping entry for BACKEND."
+  (let ((backend-symbol (gptel-model-updater-metadata--backend-symbol backend))
+        (backend-name (gptel-backend-name backend)))
+    (cl-find-if (lambda (entry)
+                  (let ((key (car entry)))
+                    (cond
+                     ((symbolp key) (eq key backend-symbol))
+                     ((stringp key) (string= key backend-name)))))
+                gptel-model-updater-backend-provider-alist)))
+
+(defun gptel-model-updater-metadata--host-provider-entry (backend host-alist)
+  "Return provider mapping entry for BACKEND from HOST-ALIST."
   (let ((host (gptel-model-updater-metadata--host backend)))
-    (or (cdr (cl-find-if (lambda (entry)
-                           (string-match-p (regexp-quote (car entry)) host))
-                         gptel-model-updater-provider-host-alist))
-        (pcase provider-type
-          ('gemini 'google)
-          ('ollama nil)
-          (_ nil))
-        (cdr (cl-find-if (lambda (entry)
-                           (string-match-p (regexp-quote (car entry)) host))
-                         gptel-model-updater-metadata--known-provider-hosts))
-        (car (cl-find-if
-              (lambda (entry)
-                (when-let* ((api-host (gptel-model-updater-metadata--provider-api-host
-                                       (cdr entry))))
-                  (or (string= host api-host)
-                      (string-suffix-p api-host host)
-                      (string-suffix-p host api-host))))
-              metadata)))))
+    (cl-find-if (lambda (entry)
+                  (string-match-p (regexp-quote (car entry)) host))
+                host-alist)))
+
+(defun gptel-model-updater-metadata--dedupe-providers (providers)
+  "Return PROVIDERS without duplicate provider keys."
+  (let (result)
+    (dolist (provider providers)
+      (when (and provider (not (memq provider result)))
+        (setq result (append result (list provider)))))
+    result))
+
+(defun gptel-model-updater-metadata--provider-keys (backend provider-type metadata)
+  "Return candidate models.dev provider keys for BACKEND and PROVIDER-TYPE."
+  (let ((host (gptel-model-updater-metadata--host backend)))
+    (gptel-model-updater-metadata--dedupe-providers
+     (append
+      (gptel-model-updater-metadata--provider-list
+       (cdr (gptel-model-updater-metadata--backend-provider-entry backend)))
+      (gptel-model-updater-metadata--provider-list
+       (pcase provider-type
+         ('gemini 'google)
+         ('ollama nil)
+         (_ nil)))
+      (gptel-model-updater-metadata--provider-list
+       (cdr (gptel-model-updater-metadata--host-provider-entry
+             backend gptel-model-updater-metadata--known-provider-hosts)))
+      (cl-loop for entry in metadata
+               for api-host = (gptel-model-updater-metadata--provider-api-host
+                               (cdr entry))
+               when (and api-host
+                         (or (string= host api-host)
+                             (string-suffix-p api-host host)
+                             (string-suffix-p host api-host)))
+               collect (car entry))))))
+
+(defun gptel-model-updater-metadata--provider-key (backend provider-type metadata)
+  "Return the first models.dev provider key for BACKEND.
+This compatibility helper returns the first candidate from
+`gptel-model-updater-metadata--provider-keys'."
+  (car (gptel-model-updater-metadata--provider-keys
+        backend provider-type metadata)))
 
 (defun gptel-model-updater-metadata--model-entry (metadata provider-key model)
   "Return METADATA model entry for PROVIDER-KEY and MODEL."
@@ -261,15 +315,18 @@ User mappings take precedence over built-in provider host mappings."
 (defun gptel-model-updater-metadata-apply (models backend provider-type)
   "Apply models.dev properties to MODELS for BACKEND and PROVIDER-TYPE.
 Return MODELS unchanged when no matching metadata is available."
-  (when-let* ((metadata (gptel-model-updater-metadata-get))
-              (provider-key (gptel-model-updater-metadata--provider-key
-                             backend provider-type metadata)))
-    (dolist (model models)
-      (when-let* ((model-entry (gptel-model-updater-metadata--model-entry
-                                metadata provider-key model))
-                  (plist (gptel-model-updater-metadata--model-plist
-                          model-entry provider-key provider-type backend)))
-        (setf (symbol-plist model) plist))))
+  (when-let* ((metadata (gptel-model-updater-metadata-get)))
+    (let ((provider-keys (gptel-model-updater-metadata--provider-keys
+                          backend provider-type metadata)))
+      (dolist (model models)
+        (catch 'found
+          (dolist (provider-key provider-keys)
+            (when-let* ((model-entry (gptel-model-updater-metadata--model-entry
+                                      metadata provider-key model))
+                        (plist (gptel-model-updater-metadata--model-plist
+                                model-entry provider-key provider-type backend)))
+              (setf (symbol-plist model) plist)
+              (throw 'found t)))))))
   models)
 
 (provide 'gptel-model-updater-metadata)

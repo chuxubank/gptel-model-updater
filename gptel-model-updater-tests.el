@@ -104,16 +104,94 @@
       (should (eq (gptel-model-updater-metadata--fetch "https://example.com")
                   'url)))))
 
-(ert-deftest gptel-model-updater-metadata-user-host-mapping-wins ()
-  "User host mappings override built-in provider mappings."
+(ert-deftest gptel-model-updater-metadata-backend-name-mapping-wins ()
+  "Backend name mappings override built-in provider mappings."
   (let ((backend (gptel-make-openai "metadata-host-test"
                    :host "api.openai.com"
                    :models '()))
-        (gptel-model-updater-provider-host-alist
-         '(("api.openai.com" . openrouter))))
+        (gptel-model-updater-backend-provider-alist
+         '(("metadata-host-test" . openrouter))))
     (should (eq (gptel-model-updater-metadata--provider-key
                  backend 'openai '((openai) (openrouter)))
                 'openrouter))))
+
+(ert-deftest gptel-model-updater-metadata-backend-provider-mapping-wins ()
+  "Backend mappings override automatic matching and support many providers."
+  (let* ((backend (gptel-make-openai "metadata-backend-test"
+                    :host "api.openai.com"
+                    :models '()))
+         (gptel-model-updater-backends '(gptel-model-updater--test-backend))
+         (gptel-model-updater-backend-provider-alist
+          '((gptel-model-updater--test-backend . (openrouter anthropic)))))
+    (unwind-protect
+        (progn
+          (set 'gptel-model-updater--test-backend backend)
+          (should (equal (gptel-model-updater-metadata--provider-keys
+                          backend 'openai '((openai) (openrouter) (anthropic)))
+                         '(openrouter anthropic openai))))
+      (makunbound 'gptel-model-updater--test-backend))))
+
+(ert-deftest gptel-model-updater-metadata-apply-tries-multiple-providers ()
+  "Metadata application tries provider candidates in order per model."
+  (let* ((backend (gptel-make-openai "metadata-multi-provider-test"
+                    :host "api.openai.com"
+                    :models '()))
+         (gptel-model-updater-backend-provider-alist
+          '(("metadata-multi-provider-test" . (openrouter openai))))
+         (metadata
+          '((openrouter
+             (models
+              (openai/gpt-4o
+               (name . "OpenRouter GPT-4o")
+               (tool_call . t)
+               (modalities . ((input . ["text"])
+                              (output . ["text"])))
+               (limit . ((context . 128000)))
+               (cost . ((input . 2.5)
+                        (output . 10))))))
+            (openai
+             (models
+              (gpt-4o
+               (name . "OpenAI GPT-4o")
+               (tool_call . t)
+               (modalities . ((input . ["text"])
+                              (output . ["text"])))
+               (limit . ((context . 128000)))
+               (cost . ((input . 2.5)
+                        (output . 10))))))))
+         (gptel-model-updater-metadata--cache metadata)
+         (gptel-model-updater-metadata--cache-url gptel-model-updater-model-metadata-url))
+    (unwind-protect
+        (progn
+          (gptel-model-updater-metadata-apply '(gpt-4o openai/gpt-4o)
+                                              backend 'openai)
+          (should (equal (get 'gpt-4o :description) "OpenAI GPT-4o"))
+          (should (equal (get 'openai/gpt-4o :description)
+                         "OpenRouter GPT-4o")))
+      (setf (symbol-plist 'gpt-4o) nil
+            (symbol-plist 'openai/gpt-4o) nil))))
+
+(ert-deftest gptel-model-updater-format-model-annotation-uses-plist ()
+  "Interactive model annotations display gptel model properties."
+  (let ((model 'gptel-model-updater-test-model))
+    (unwind-protect
+        (progn
+          (setf (symbol-plist model)
+                '(:description "Test Model"
+                  :capabilities (media tool-use json)
+                  :context-window 128
+                  :input-cost 2.5
+                  :output-cost 10
+                  :cutoff-date "2024-01"))
+          (let ((annotation (substring-no-properties
+                             (gptel-model-updater--format-model-annotation model))))
+            (should (string-match-p "Test Model" annotation))
+            (should (string-match-p "media" annotation))
+            (should (string-match-p "128k" annotation))
+            (should (string-match-p "\\$ 2\\.50 in" annotation))
+            (should (string-match-p "\\$ 10\\.00 out" annotation))
+            (should (string-match-p "2024-01" annotation))))
+      (setf (symbol-plist model) nil))))
 
 (provide 'gptel-model-updater-tests)
 ;;; gptel-model-updater-tests.el ends here
