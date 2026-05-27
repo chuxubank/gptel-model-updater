@@ -1,0 +1,144 @@
+* gptel-model-updater
+# #+ATTR_HTML:
+# [[https://melpa.org/#/gptel-model-updater][https://melpa.org/packages/gptel-model-updater-badge.svg]]
+
+#+ATTR_HTML: :title CI
+[[https://github.com/chuxubank/cat-emacs/actions/workflows/ci.yml][https://github.com/chuxubank/cat-emacs/actions/workflows/ci.yml/badge.svg]]
+
+Fetch model IDs for [[https://github.com/karthink/gptel][gptel]]
+backends and write them to =gptel-backend-models=. When available, model
+metadata is loaded from [[https://models.dev][models.dev]] and applied
+as gptel model properties such as context window, cost, capabilities,
+MIME types, and knowledge cutoff.
+
+This is a blind convenience layer: it imports model IDs only. It does
+not verify cost, context length, tool support, release date, deprecation
+state, or provider policy. Check provider documentation before using a
+model.
+
+** Install
+#+begin_src elisp
+(use-package gptel-model-updater
+  :vc (:url "https://github.com/chuxubank/gptel-model-updater")
+  :after gptel
+  :custom
+  (gptel-model-updater-backends
+   '(gptel--my-openai gptel--my-ollama))
+  (gptel-model-updater-models
+   '("OpenAI:gpt-4o" "Ollama:llama3")))
+#+end_src
+
+Or with =straight.el=:
+
+#+begin_src elisp
+(straight-use-package
+  '(gptel-model-updater :host github :repo "chuxubank/gptel-model-updater"))
+#+end_src
+
+** Setup
+Create gptel backends with empty model lists:
+
+#+begin_src elisp
+(setq gptel--my-openai
+      (gptel-make-openai "OpenAI"
+        :models '()
+        :host "api.openai.com"
+        :key 'gptel-api-key
+        :stream t))
+
+(setq gptel-model-updater-backends
+      '(gptel--my-openai))
+#+end_src
+
+Update models:
+
+#+begin_src elisp
+(gptel-model-updater-update-all)
+#+end_src
+
+Select a backend/model:
+
+#+begin_src elisp
+(gptel-model-updater-select-all-targets)
+#+end_src
+
+** Filtering
+Large aggregators such as OpenRouter may return many models. Use filters
+to keep the model list small:
+
+#+begin_src elisp
+(setq gptel-model-updater-max-models 80)
+(setq gptel-model-updater-include-model-regexp
+      "\\`\\(openai/\\|anthropic/\\|google/\\)")
+(setq gptel-model-updater-exclude-model-regexp
+      "\\(preview\\|beta\\|free\\)")
+#+end_src
+
+Per-backend filters override the global settings:
+
+#+begin_src elisp
+(setq gptel-model-updater-backend-filters
+      '(("OpenRouter"
+         :include "\\`\\(openai/\\|anthropic/\\|google/\\)"
+         :exclude "\\(preview\\|beta\\|free\\)"
+         :max 80)
+        ("Ollama"
+         :include nil
+         :exclude nil
+         :max nil)))
+#+end_src
+
+Omitted keys fall back to the global values. Explicit nil disables that
+rule for the backend.
+
+** Model metadata
+Model metadata is matched from models.dev automatically. For proxy or
+gateway backends, configure the models.dev providers explicitly:
+
+#+begin_src elisp
+(setq gptel-model-updater-backends
+      '(gptel--my-openai
+        (gptel--my-openrouter :providers (openrouter openai anthropic google))
+        (gptel--my-gateway :providers (all))))
+#+end_src
+
+Providers are tried in order for each model. The special provider =all=
+searches every models.dev provider and uses the first matching model
+metadata.
+
+** Options
+- =gptel-model-updater-backends=: backend variables or backend specs to
+  update; specs may include =:providers= for metadata matching.
+- =gptel-model-updater-models=: preferred =BACKEND:MODEL= entries.
+- =gptel-model-updater-max-models=: maximum models kept after filtering,
+  default 200.
+- =gptel-model-updater-include-model-regexp=: keep only matching model
+  names.
+- =gptel-model-updater-exclude-model-regexp=: drop matching model names.
+- =gptel-model-updater-backend-filters=: per-backend include/exclude/max
+  rules.
+- =gptel-model-updater-model-metadata-url=: models.dev metadata URL; set
+  to nil to disable model properties.
+- =gptel-model-updater-sort-models=: sort models alphabetically; default
+  nil keeps provider order.
+- =gptel-model-updater-timeout=: curl timeout in seconds.
+- =gptel-model-updater-after-update-hook=: hook run after each backend
+  update, called with backend name, backend, and models.
+- =gptel-model-updater-after-update-all-hook=: hook run after updating
+  all backends; defaults to selecting configured targets.
+
+** Commands
+- =gptel-model-updater-update-backend=
+- =gptel-model-updater-update-all=
+- =gptel-model-updater-select-all-targets= --- with =C-u= prefix,
+  interactively select each target
+- =gptel-model-updater-select-default-target=
+- =gptel-model-updater-select-external-targets=
+
+** Providers
+- OpenAI-compatible APIs
+- Ollama
+- Gemini
+
+** License
+GPLv3
