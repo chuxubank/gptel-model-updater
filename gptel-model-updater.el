@@ -617,7 +617,7 @@ otherwise select each target from MODEL-LIST or randomly."
                 model-list))))))))
 
 ;;;###autoload
-(defun gptel-model-updater-select-default-target (&optional quiet choice model-list)
+(defun gptel-model-updater-select-default-target (&optional quiet interactivep model-list)
   "Select the default GPTel backend/model target from refreshed model lists.
 Interactively, read backend and model with completion.  Otherwise, entries
 in MODEL-LIST are tried in order.  Each entry may be BACKEND:MODEL, or just
@@ -625,14 +625,15 @@ MODEL to search across `gptel-model-updater-backends'.  If MODEL-LIST is
 nil, use `gptel-model-updater-models'.  If neither list selects a model,
 the first backend with models is selected, and one model is chosen randomly.
 
-When QUIET is non-nil, do not print the final selection.  CHOICE is a cons
-of BACKEND and MODEL."
-  (interactive
-   (list nil
-         (gptel-model-updater--read-backend-model "GPTel ")))
+When QUIET is non-nil, do not print the final selection.  When INTERACTIVEP
+is non-nil, read backend and model with completion."
+  (interactive (list nil t))
   (setq model-list (gptel-model-updater--effective-model-list model-list))
-  (setq choice (or choice (gptel-model-updater--pick-backend-model model-list)))
-  (gptel-model-updater--set-choice 'gptel-backend 'gptel-model choice)
+  (gptel-model-updater--set-choice
+   'gptel-backend 'gptel-model
+   (if interactivep
+       (gptel-model-updater--read-backend-model "GPTel ")
+     (gptel-model-updater--pick-backend-model model-list)))
   (unless quiet
     (message "GPTel target set\n%s"
              (gptel-model-updater--format-default-target))))
@@ -656,25 +657,22 @@ When QUIET is non-nil, do not print the final selections."
               ""))))
 
 ;;;###autoload
-(defun gptel-model-updater-select-all-targets (&optional quiet model-list)
+(defun gptel-model-updater-select-all-targets (&optional quiet interactivep model-list)
   "Select all configured backend/model targets.
 The global `gptel-backend' and `gptel-model' variables are selected first.
 Then `gptel-model-updater-external-targets' are selected.  MODEL-LIST
 overrides `gptel-model-updater-models'.  When QUIET is non-nil, do not print
-selection messages.
+selection messages.  When INTERACTIVEP is non-nil, read each target with
+completion.
 
 With \\[universal-argument], interactively select each target."
-  (interactive)
+  (interactive (list nil current-prefix-arg))
   (setq model-list (gptel-model-updater--effective-model-list model-list))
-  (if (and current-prefix-arg (not quiet))
-      (progn
-        (call-interactively #'gptel-model-updater-select-default-target)
-        (call-interactively #'gptel-model-updater-select-external-targets))
-    (gptel-model-updater-select-default-target t nil model-list)
-    (gptel-model-updater-select-external-targets t nil model-list)
-    (unless quiet
-      (message "GPTel targets set\n%s"
-               (gptel-model-updater--format-all-targets)))))
+  (gptel-model-updater-select-default-target t interactivep model-list)
+  (gptel-model-updater-select-external-targets t interactivep model-list)
+  (unless quiet
+    (message "GPTel targets set\n%s"
+             (gptel-model-updater--format-all-targets))))
 
 ;;;###autoload
 (defun gptel-model-updater-update-backend
