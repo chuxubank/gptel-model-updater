@@ -208,13 +208,43 @@
                   :output-cost 10
                   :cutoff-date "2024-01"))
           (let ((annotation (substring-no-properties
-                             (gptel-model-updater--format-model-annotation model))))
+                             (gptel-model-updater-ui--format-model-annotation model))))
             (should (string-match-p "Test Model" annotation))
             (should (string-match-p "media" annotation))
             (should (string-match-p "128k" annotation))
             (should (string-match-p "\\$ 2\\.50 in" annotation))
             (should (string-match-p "\\$ 10\\.00 out" annotation))
             (should (string-match-p "2024-01" annotation))))
+      (setf (symbol-plist model) nil))))
+
+(ert-deftest gptel-model-updater-format-model-annotation-uses-column-widths ()
+  "Interactive model annotations honor configured column widths."
+  (let ((model 'gptel-model-updater-test-model)
+        (old-widths gptel-model-updater-ui-annotation-column-widths))
+    (unwind-protect
+        (progn
+          (setq gptel-model-updater-ui-annotation-column-widths
+                '((model . 20)
+                  (description . 10)
+                  (capabilities . 12)
+                  (context-window . 6)
+                  (input-cost . 9)
+                  (output-cost . 11)
+                  (cutoff-date . nil)))
+          (setf (symbol-plist model)
+                '(:description "Long Test Model Description"
+                  :capabilities (media tool-use json)
+                  :context-window 128
+                  :input-cost 2.5
+                  :output-cost 10
+                  :cutoff-date "2024-01"))
+          (let* ((annotation (gptel-model-updater-ui--format-model-annotation model))
+                 (plain (substring-no-properties annotation)))
+            (should (equal (get-text-property 0 'display annotation)
+                           '(space :align-to 20)))
+            (should (string-match-p "Long Te" plain))
+            (should-not (string-match-p "Long Test Model Description" plain))))
+      (setq gptel-model-updater-ui-annotation-column-widths old-widths)
       (setf (symbol-plist model) nil))))
 
 (ert-deftest gptel-model-updater-update-all-runs-after-hook ()

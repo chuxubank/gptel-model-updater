@@ -43,6 +43,7 @@
   :group 'gptel)
 
 (require 'gptel-model-updater-metadata)
+(require 'gptel-model-updater-ui)
 
 (defcustom gptel-model-updater-timeout 30
   "Timeout for API requests in seconds."
@@ -512,30 +513,6 @@ the first available managed backend and a random model."
                      (gptel-backend-models (symbol-value backend-symbol)))
            collect (symbol-value backend-symbol)))
 
-(defun gptel-model-updater--format-model-annotation (model)
-  "Return completion annotation for MODEL metadata."
-  (let ((desc (get model :description))
-        (caps (get model :capabilities))
-        (context (get model :context-window))
-        (input-cost (get model :input-cost))
-        (output-cost (get model :output-cost))
-        (cutoff (get model :cutoff-date)))
-    (when (or desc caps context input-cost output-cost cutoff)
-      (concat
-       (propertize " " 'display `(space :align-to 40))
-       (when desc (truncate-string-to-width desc 50 nil ? t t))
-       " " (propertize " " 'display `(space :align-to 92))
-       (when caps (truncate-string-to-width (prin1-to-string caps) 56 nil ? t t))
-       " " (propertize " " 'display `(space :align-to 150))
-       (when context (format "%5dk" context))
-       " " (propertize " " 'display `(space :align-to 158))
-       (when input-cost (format "$%5.2f in" input-cost))
-       (if (and input-cost output-cost) "," " ")
-       " " (propertize " " 'display `(space :align-to 169))
-       (when output-cost (format "$%6.2f out" output-cost))
-       " " (propertize " " 'display `(space :align-to 182))
-       cutoff))))
-
 (defun gptel-model-updater--read-model-name (prompt models)
   "Read a model name from MODELS with metadata annotations."
   (let* ((model-names (mapcar #'symbol-name models))
@@ -544,7 +521,7 @@ the first available managed backend and a random model."
           `(:annotation-function
             ,(lambda (comp)
                (when-let* ((model (cdr (assoc comp models-alist))))
-                 (gptel-model-updater--format-model-annotation model))))))
+                 (gptel-model-updater-ui--format-model-annotation model))))))
     (completing-read prompt model-names nil t)))
 
 (defun gptel-model-updater--read-backend-model (&optional prompt-prefix)
